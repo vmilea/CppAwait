@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Include">
+      <UniqueIdentifier>{e7e8a504-9910-4646-b04f-ed54150bb116}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Include\CppAwait">
+      <UniqueIdentifier>{acb8d2b4-8136-4fad-8861-be4e90dea798}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sources">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Include\CppAwait\impl">
+      <UniqueIdentifier>{ccc952c4-1d77-449c-8592-dfde49b679f9}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="AsioWrappers.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="Awaitable.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="StackContext.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="Log.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="StringUtil.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\include\CppAwait\AsioWrappers.h">
+      <Filter>Include\CppAwait</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\Awaitable.h">
+      <Filter>Include\CppAwait</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\StackContext.h">
+      <Filter>Include\CppAwait</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\YieldCollection.h">
+      <Filter>Include\CppAwait</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\Config.h">
+      <Filter>Include\CppAwait</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h">
+      <Filter>Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\impl\Assert.h">
+      <Filter>Include\CppAwait\impl</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\impl\Log.h">
+      <Filter>Include\CppAwait\impl</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\impl\Foreach.h">
+      <Filter>Include\CppAwait\impl</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\impl\Util.h">
+      <Filter>Include\CppAwait\impl</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\impl\StringUtil.h">
+      <Filter>Include\CppAwait\impl</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\CppAwait\impl\Functional.h">
+      <Filter>Include\CppAwait\impl</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigPrivate.h">
+      <Filter>Sources</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+* switch to CMake
+* documentation
+* more/better examples
+* reduce unnecessary context switches
+* replace some asserts with exceptions
+* better exception safety
+* formal cancellation
