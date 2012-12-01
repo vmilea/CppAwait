@@ -27,7 +27,7 @@ void ex_iterator();
 void ex_comboDetector();
 void ex_awaitBasics();
 void ex_awaitHttpClient();
-void ex_awaitFlicker();
+void ex_awaitFlickr();
 
 const std::array<std::pair<void (*)(), std::string>, 6> EXAMPLES =
 {
@@ -36,7 +36,7 @@ const std::array<std::pair<void (*)(), std::string>, 6> EXAMPLES =
     std::make_pair(&ex_comboDetector, "coroutines - combo detector"),
     std::make_pair(&ex_awaitBasics, "await - basics"),
     std::make_pair(&ex_awaitHttpClient, "await - HTTP client"),
-    std::make_pair(&ex_awaitFlicker, "await - Flicker client")
+    std::make_pair(&ex_awaitFlickr, "await - Flickr client")
 };
 
 int main(int argc, char** argv)

@@ -85,7 +85,7 @@
     <ClCompile Include="ex_awaitHttpClient.cpp" />
     <ClCompile Include="ex_fibonacci.cpp" />
     <ClCompile Include="ex_comboDetector.cpp" />
-    <ClCompile Include="ex_awaitFlicker.cpp" />
+    <ClCompile Include="ex_awaitFlickr.cpp" />
     <ClCompile Include="ex_iterator.cpp" />
     <ClCompile Include="ex_awaitBasics.cpp" />
     <ClCompile Include="main.cpp" />
