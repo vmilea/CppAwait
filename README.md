@@ -25,11 +25,13 @@ Download and archive some files, allowing for archival while next download is in
     std::vector<std::string> urls = { ... };
 
     ut::AwaitableHandle awtArchive;
-    std::vector<char> document;
 
     for (std::string url : urls) {
+        // holds fetched document
+        std::unique_ptr<std::vector<char> > document;
+
         ut::AwaitableHandle awtFetch = asyncFetch(url, &document);
-        
+
         // doesn't block, instead it yields. the coroutine
         // gets resumed when fetch done or on exception.
         awtFetch.await(); 
@@ -37,7 +39,7 @@ Download and archive some files, allowing for archival while next download is in
         if (awtArchive) {
             awtArchive.await();
         }
-        awtArchive = asyncArchive(document);
+        awtArchive = asyncArchive(std::move(document));
     }
 
 
@@ -75,7 +77,7 @@ Dependencies
 
 C++11 compiler. Tested on Visual C++ 2010, Visual C++ 2012, GCC 4.6+
 
-Boost. CppAwait must link to Boost.Context. Examples also need Boost.Thread.
+Boost 1.52. CppAwait must link to Boost.Context. Examples also need Boost.Thread.
 
 
 

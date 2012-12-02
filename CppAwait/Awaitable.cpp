@@ -225,7 +225,7 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
     context->setParent(mainContext());
     awt->setBoundContext(context);
 
-    // FIXME: awaitable 
+    // FIXME: cancel ticket if awaitable destroyed before starting
     schedule([context] {
         yieldTo(context);
     });
