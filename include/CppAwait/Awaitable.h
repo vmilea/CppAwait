@@ -84,8 +84,6 @@ public:
 protected:
     Awaitable();
 
-    void setBoundContext(StackContext *context);
-
     void complete();
 
     void fail(std::exception_ptr eptr);
@@ -93,6 +91,7 @@ protected:
     std::string mTag;
     StackContext *mBoundContext;
     StackContext *mAwaitingContext;
+    Ticket mStartTicket;
     bool mDidComplete;
     std::exception_ptr mExceptionPtr;
     OnDoneHandler mDoneHandler;
@@ -186,9 +185,11 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         awt->mAwaitingContext = currentContext();
     }
 
-    Awaitable *completedAwt = (Awaitable *) yieldTo(mainContext());
-    auto completedPos = awaitables.end();
-
+    yieldTo(mainContext());
+    
+    Collection::iterator completedPos;
+    Awaitable *completedAwt = nullptr;
+    
     for (auto it = awaitables.begin(); it != awaitables.end(); ++it) {
         Awaitable *awt = selectAwaitable(*it);
         if (awt == nullptr) {
@@ -196,12 +197,13 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         }
         awt->mAwaitingContext = nullptr;
         
-        if (awt == completedAwt) {
+        if (completedAwt == nullptr && awt->isDone()) {
+            completedAwt = awt;
             completedPos = it;
         }
     }
     
-    ut_assert_(completedPos != awaitables.end());
+    ut_assert_(completedAwt != nullptr);
     ut_assert_(completedAwt->isDone());
 
     return completedPos;

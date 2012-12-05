@@ -32,6 +32,7 @@ Awaitable::~Awaitable()
 
     if (didComplete() || didFail()) {
         ut_assert_(mAwaitingContext == nullptr);
+        ut_assert_(mStartTicket == 0);
 
         if (mBoundContext != nullptr && mBoundContext->isRunning()) {
             ut_log_debug_("* unwinding bound context '%s'", mBoundContext->tag());
@@ -40,6 +41,11 @@ Awaitable::~Awaitable()
             yieldTo(mBoundContext); // resume context to unwind stack
         }
     } else {
+        if (mStartTicket != 0) {
+            ut_assert_(mAwaitingContext == nullptr);
+            cancelScheduled(mStartTicket);
+            mStartTicket = 0;
+        }
         if (mAwaitingContext != nullptr) {
             ut_log_debug_("* while being awaited by '%s'", mAwaitingContext->tag());
             mAwaitingContext = nullptr;
@@ -71,6 +77,8 @@ Awaitable::~Awaitable()
 
 void Awaitable::await()
 {
+    ut_log_debug_("* context '%s' awaits %s", currentContext()->tag(), tag());
+
     ut_assert_(currentContext() != mainContext());
     ut_assert_(mAwaitingContext == nullptr);
 
@@ -81,14 +89,22 @@ void Awaitable::await()
     if (!mDidComplete) {
         mAwaitingContext = currentContext();
 
-        // yielding to parent would be possible but is clunky
-        // e.g: A awaits B
-        //      B awaits C1, C2, C3 => A needs to ignore 3 spurious yields from B
-        //
-        // hence we yield to main context
-        void *thiz = yield(mainContext());
+        if (mBoundContext == nullptr) {
+            // No bound context, go back to main loop.
+            yieldTo(mainContext());
+        } else if (mStartTicket == 0) {
+            // Bound context already started through main loop. This can happen
+            // if we awaited some other Awaitable before this one and the main loop
+            // had time to spin.
+            yieldTo(mainContext());
+        } else {
+            // Since we need to yield anyway, bound context can be started
+            // immediately instead of going through main loop.
+            cancelScheduled(mStartTicket);
+            mStartTicket = 0;
+            yieldTo(mBoundContext);
+        }
 
-        ut_assert_(this == thiz);
         ut_assert_(isDone());
 
         mAwaitingContext = nullptr;
@@ -177,15 +193,10 @@ void Awaitable::setTag(const std::string& tag)
 Awaitable::Awaitable()
     : mBoundContext(nullptr)
     , mAwaitingContext(nullptr)
+    , mStartTicket(0)
     , mDidComplete(false)
     , mUserData(nullptr)
 {
-}
-
-void Awaitable::setBoundContext(StackContext *context)
-{
-    ut_assert_(mBoundContext == nullptr);
-    mBoundContext = context;
 }
 
 //
@@ -194,40 +205,50 @@ void Awaitable::setBoundContext(StackContext *context)
 
 AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, size_t stackSize)
 {
-    auto awt = new Completable();
+    auto awt = new Awaitable();
     awt->setTag(tag);
 
     ut_log_debug_("* starting awt '%s'", tag.c_str());
     
     StackContext *context = new StackContext(tag, [awt, func](void *) {
-        std::exception_ptr eptr;
-        
         try {
             func(awt);
+
             ut_assert_(!awt->didFail());
 
             if (!awt->didComplete()) {
-                awt->complete();
+                if (awt->mAwaitingContext != nullptr)  {
+                    // don't yield on complete, instead wait until context unwinded
+                    awt->mBoundContext->setParent(awt->mAwaitingContext);
+                    awt->mAwaitingContext = nullptr;
+                }
+
+                awt->complete(); // mAwaitingContext is null, won't yield
             }
         } catch (...) {
             ut_assert_(!awt->didFail());
             ut_assert_(!awt->didComplete());
 
-            // [MSVC] may not yield from catch block
-            eptr = std::current_exception();
-        }
+            std::exception_ptr eptr = std::current_exception();
 
-        if (!(eptr == std::exception_ptr())) {
-            awt->fail(eptr);
+            if (!(eptr == std::exception_ptr())) {
+                if (awt->mAwaitingContext != nullptr)  {
+                    // don't yield on fail, instead wait until context unwinded
+                    awt->mBoundContext->setParent(awt->mAwaitingContext);
+                    awt->mAwaitingContext = nullptr;
+                }
+
+                awt->fail(eptr);  // mAwaitingContext is null, won't yield
+            }
         }
     }, stackSize);
 
     context->setParent(mainContext());
-    awt->setBoundContext(context);
+    awt->mBoundContext = context;
 
-    // FIXME: cancel ticket if awaitable destroyed before starting
-    schedule([context] {
-        yieldTo(context);
+    awt->mStartTicket = schedule([awt] {
+        awt->mStartTicket = 0;
+        yieldTo(awt->mBoundContext);
     });
 
     return AwaitableHandle(awt);
