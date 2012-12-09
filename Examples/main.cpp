@@ -14,8 +14,7 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
-#include "Util.h"
+#include "ExUtil.h"
 #include <array>
 #include <string>
 #include <boost/lexical_cast.hpp>
@@ -30,14 +29,14 @@ void ex_awaitHttpClient();
 void ex_awaitFlickr();
 
 const std::array<std::pair<void (*)(), std::string>, 6> EXAMPLES =
-{
+{ {
     std::make_pair(&ex_fibonacci, "coroutines - fibonacci sequence generator"),
     std::make_pair(&ex_iterator, "coroutines - collection iterator"),
     std::make_pair(&ex_comboDetector, "coroutines - combo detector"),
     std::make_pair(&ex_awaitBasics, "await - basics"),
     std::make_pair(&ex_awaitHttpClient, "await - HTTP client"),
     std::make_pair(&ex_awaitFlickr, "await - Flickr client")
-};
+} };
 
 int main(int argc, char** argv)
 {
@@ -53,7 +52,7 @@ int main(int argc, char** argv)
         printf ("Examples:\n\n");
             
         for (size_t i = 0; i < EXAMPLES.size(); i++) {
-            printf ("%02d: %s\n", i + 1, EXAMPLES[i].second.c_str());
+            printf ("%02d: %s\n", (int) (i + 1), EXAMPLES[i].second.c_str());
         }
 
         printf ("\nSelect: ");

@@ -14,8 +14,7 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
-#include "Util.h"
+#include "ExUtil.h"
 #include <CppAwait/StackContext.h>
 #include <list>
 #include <array>
@@ -28,13 +27,13 @@
 // valid combos
 //
 const std::array<std::string, 5> COMBOS =
-{
+{ {
     "xx",
     "yy",
     "xyx",
     "xyy",
     "yxx"
-};
+} };
 
 // input sequence
 //

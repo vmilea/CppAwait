@@ -14,9 +14,9 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
 #include <CppAwait/impl/Log.h>
 #include <CppAwait/impl/Util.h>
+#include <cstring>
 
 namespace ut {
 
@@ -52,7 +52,7 @@ void implLog(LogLevel logLevel, const char *format, ...)
 
     memcpy(sBuffer, PREFIXES[logLevel], PREFIX_LEN + 1);
 
-    vsnprintf(sBuffer + PREFIX_LEN, LOG_BUF_SIZE, format, ap);
+    vsnprintf(sBuffer + PREFIX_LEN, LOG_BUF_SIZE - PREFIX_LEN, format, ap);
 
     printf("%s\n", sBuffer);
     

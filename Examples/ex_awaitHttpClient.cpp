@@ -14,8 +14,7 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
-#include "Util.h"
+#include "ExUtil.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <Looper/Looper.h>
@@ -100,7 +99,7 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
 
     // process headers
     std::string header;
-    outContentLength = SIZE_MAX;
+    outContentLength = 0;
 
     printf ("headers:\n");
     

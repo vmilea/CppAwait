@@ -1,2 +1,10 @@
+[12-08-2012]
+* migrated to CMake build system
+* added getting started guide
+* minor fixes for *nix support
+
+[12-05-2012]
+* optimizations, less context switching
+
 [12-01-2012]
 * initial commit

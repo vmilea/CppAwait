@@ -14,7 +14,6 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
 #include <CppAwait/AsioWrappers.h>
 #include <CppAwait/impl/Util.h>
 #include <boost/algorithm/string.hpp>
@@ -92,7 +91,7 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
 
     // process headers
     std::string header;
-    outContentLength = SIZE_MAX;
+    outContentLength = (size_t) -1;
 
     while (std::getline(responseStream, header) && header != "\r") {
         if (boost::starts_with(header, "Content-Length: ")) {

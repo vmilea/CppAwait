@@ -14,7 +14,6 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
 #include <CppAwait/Awaitable.h>
 #include <Looper/Looper.h>
 

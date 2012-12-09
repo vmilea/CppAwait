@@ -14,7 +14,6 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
 #include <CppAwait/impl/StringUtil.h>
 #include <CppAwait/impl/Assert.h>
 
@@ -52,9 +51,12 @@ int safe_vprintf(std::vector<char>& outBuf, size_t pos, const char *format, va_l
 {
     ut_assert_(pos <= outBuf.size());
 
+    va_list apCopy;
+    va_copy(apCopy, ap);
+
     int numChars = vsnprintf(outBuf.data() + pos, outBuf.size() - pos, format, ap);
 
-    if (numChars > -1) {
+    if (numChars >= 0) {
         if (numChars >= (int) (outBuf.size() - pos)) {
             size_t newSize = pos + numChars + 1;
 
@@ -62,9 +64,8 @@ int safe_vprintf(std::vector<char>& outBuf, size_t pos, const char *format, va_l
                 newSize = outBuf.size() * 2 + 64;
 
             outBuf.resize(newSize);
+            vsnprintf(outBuf.data() + pos, outBuf.size() - pos, format, apCopy);
         }
-
-        vsnprintf(outBuf.data() + pos, outBuf.size() - pos, format, ap);
     }
 
     return numChars;
@@ -83,7 +84,8 @@ std::string string_vprintf(const char *format, va_list ap)
 {
     std::vector<char> buf;
     int numChars = safe_vprintf(buf, 0, format, ap);
-    return (numChars == -1 ? "" : std::string(buf.data(), numChars));
+
+    return (numChars < 0 ? "" : std::string(buf.data(), numChars));
 }
 
 std::string string_printf(const char *format, ...)

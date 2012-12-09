@@ -1,7 +1,7 @@
 CppAwait
 ========
 
-CppAwait is a portable library that brings the await operator from C# 5 to C++. It uses stackful coroutines (Boost.Context) instead of compiler magic to get the same job done.
+CppAwait is a portable library that brings the await operator from C# 5 to C++. It uses stackful coroutines (_Boost.Context_) instead of compiler magic to get the same job done.
 
 
 
@@ -72,19 +72,36 @@ Features
 
 
 
-Dependencies
-============
+Getting started
+===============
 
-C++11 compiler. Tested on Visual C++ 2010, Visual C++ 2012, GCC 4.6+
+1. __Install Boost.__ To use CppAwait you need Boost 1.52+ with _Boost.Context_ and _Boost.System_ compiled. Examples additionally link to _Boost.Thread_, _Boost.Chrono_. Quick guide:
 
-Boost 1.52. CppAwait must link to Boost.Context. Examples also need Boost.Thread.
+   - get archive from [here](http://www.boost.org/users/download/)
+   - ./bootstrap
+   - ./b2 --build-type=minimal --with-thread --with-chrono --with-context --toolset=your-toolset stage
+
+2. __Install CMake 2.8+__ from [here](http://www.cmake.org/cmake/resources/software.html).
+
+3. __Build CppAwait__:
+
+   - mkdir build\_dir ; cd build\_dir
+   - cmake -G "your-generator" -DBOOST\_INCLUDEDIR="path-to-boost" -DBOOST\_LIBRARYDIR="path-to-boost-libs" "path-to-CppAwait"
+   - open solution / make
 
 
 
 Portability
 ===========
 
-Boost.Context runs on ARM / MIPS / PowerPC32 / PowerPC64 / X86-32 / X86-64.
+The library is supported on Windows / Linux with any of these compilers:
+
+   - Visual C++ 2010 or later
+   - GCC 4.6 or later
+
+Boost.Context includes assembly code for ARM / MIPS / PowerPC32 / PowerPC64 / X86-32 / X86-64.
+
+Porting to additional platforms (e.g. iOS, Android) should be trivial.
 
 
 

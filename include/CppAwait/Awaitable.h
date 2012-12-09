@@ -187,7 +187,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
 
     yieldTo(mainContext());
     
-    Collection::iterator completedPos;
+    typename Collection::iterator completedPos;
     Awaitable *completedAwt = nullptr;
     
     for (auto it = awaitables.begin(); it != awaitables.end(); ++it) {

@@ -14,7 +14,6 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
 #include <CppAwait/StackContext.h>
 #include <CppAwait/impl/Util.h>
 #include <map>

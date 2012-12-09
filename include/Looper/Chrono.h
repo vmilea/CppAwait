@@ -17,6 +17,7 @@
 #pragma once
 
 #include <CppAwait/Config.h>
+#include <limits>
 
 namespace loo {
     
@@ -70,7 +71,7 @@ struct Timepoint
     }
 };
 
-static Timepoint TIMEPOINT_MAX(INT32_MAX * 1000000LL);
+static Timepoint TIMEPOINT_MAX(std::numeric_limits<int64_t>::max());
 
 inline bool operator==(const Timepoint& lhs, const Timepoint& rhs)
 {

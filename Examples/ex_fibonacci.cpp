@@ -14,8 +14,7 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
-#include "Util.h"
+#include "ExUtil.h"
 #include <CppAwait/StackContext.h>
 #include <CppAwait/YieldCollection.h>
 #include <array>
@@ -28,12 +27,12 @@ static void coFiboGenerator(void *startValue)
 {
     (void) startValue; // unused
 
-    long long a = 0, b = 1;
+    long a = 0, b = 1;
     ut::yield(&a);
     ut::yield(&b);
 
     do {
-        long long temp = a;
+        long temp = a;
         a = b;
         b += temp;
 
@@ -51,10 +50,10 @@ void ex_fibonacci()
 
         for (int i = 0; i < 10; i++) {
             // yield nullptr to coroutine
-            auto value = (long long *) ut::yieldTo(fiboSC);
+            auto value = (long *) ut::yieldTo(fiboSC);
 
             // back from coroutine. value points to an integer on fibo stack
-            printf ("%lld\n", *value);
+            printf ("%ld\n", *value);
         }
         printf ("\n\n");
 
@@ -68,11 +67,11 @@ void ex_fibonacci()
     {
         // YieldCollection makes it easier to iterate over generators
 
-        ut::YieldCollection<long long> fibos(&coFiboGenerator);
+        ut::YieldCollection<long> fibos(&coFiboGenerator);
 
         int i = 0;
-        foreach_(long long value, fibos) {
-            printf ("%lld\n", value);
+        foreach_(long value, fibos) {
+            printf ("%ld\n", value);
 
             if (++i == 10)
                 break;

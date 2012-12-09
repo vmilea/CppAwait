@@ -14,8 +14,7 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
-#include "Util.h"
+#include "ExUtil.h"
 #include <CppAwait/Awaitable.h>
 #include <Looper/Looper.h>
 #include <array>
@@ -50,8 +49,8 @@ static ut::AwaitableHandle asyncMySimpleDelay(long delay)
 }
 
 // Awaitable with dedicated context. Having a separate context means you can
-// yield/await. await() suspends current context (i.e. yield to main context)
-// until done.
+// yield/await. await() *does not block* , instead it yields to main context.
+// After task is done, awaiting context will resume.
 //
 static ut::AwaitableHandle asyncMyDelay(long delay)
 {
@@ -81,11 +80,11 @@ static ut::AwaitableHandle asyncTest()
         printf ("'%s' - start\n", ut::currentContext()->tag());
 
         // it's trivial to compose awaitables
-        std::array<ut::AwaitableHandle, 3> awts = {
+        std::array<ut::AwaitableHandle, 3> awts = { {
             asyncMyDelay(400),
             asyncMyDelay(300),
             asyncMyDelay(800)
-        };
+        } };
         ut::awaitAll(awts);
         
         printf ("'%s' - done\n", ut::currentContext()->tag());

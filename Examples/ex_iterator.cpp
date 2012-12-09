@@ -14,8 +14,7 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
-#include "Util.h"
+#include "ExUtil.h"
 #include <CppAwait/StackContext.h>
 #include <CppAwait/YieldCollection.h>
 #include <array>
@@ -41,7 +40,7 @@ void ex_iterator()
 {
     ut::initMainContext();
 
-    std::array<int, 10> digits = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    std::array<int, 10> digits = { { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 } };
 
     auto coOddDigits = [&](void*) {
         filteredIterator(digits, [](int value) { return value % 2 == 1; });

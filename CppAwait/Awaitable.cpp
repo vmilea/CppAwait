@@ -14,7 +14,6 @@
 * limitations under the License.
 */
 
-#include "stdafx.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/impl/Util.h>
 #include <cstdio>
@@ -61,7 +60,7 @@ Awaitable::~Awaitable()
             } catch (...) {
             }
         } else {
-            fail(make_exception_ptr(InterruptedException()));
+            fail(ut::make_exception_ptr(InterruptedException()));
         }
     }
 
