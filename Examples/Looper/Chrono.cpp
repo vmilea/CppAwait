@@ -14,22 +14,23 @@
 * limitations under the License.
 */
 
-#include <Looper/Chrono.h>
-#include <boost/chrono.hpp>
+#include "Chrono.h"
 
 namespace loo {
 
-static boost::chrono::nanoseconds sBaseTime = boost::chrono::nanoseconds(0);
+static Timepoint sBaseTime;
 
 void rebaseMonotonicTime()
 {
-    sBaseTime = boost::chrono::high_resolution_clock::now().time_since_epoch();
+    sBaseTime = std::chrono::time_point_cast<Timepoint::duration>(
+        Timepoint::clock::now());
 }
 
 Timepoint getMonotonicTime()
 {
-    boost::chrono::nanoseconds elapsed = boost::chrono::high_resolution_clock::now().time_since_epoch() - sBaseTime;
-    return Timepoint((int64_t) elapsed.count());
+    return Timepoint(
+        std::chrono::duration_cast<Timepoint::duration>(
+            Timepoint::clock::now() - sBaseTime));
 }
 
 }

@@ -8,6 +8,6 @@ Examples
 examples for using coroutines & awaitables
 
 
-Looper
+Examples/Looper
 ---------
 support library for examples, implements a run loop

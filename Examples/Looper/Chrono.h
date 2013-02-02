@@ -14,14 +14,31 @@
 * limitations under the License.
 */
 
-#include <Looper/Scheduler.h>
-#include <Looper/Looper.h>
+#pragma once
+
+#include <CppAwait/Config.h>
+#include <chrono>
 
 namespace loo {
+    
+typedef std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::microseconds> Timepoint;
 
-AbstractScheduler& mainScheduler()
+//
+// utility functions
+//
+
+void rebaseMonotonicTime();
+
+Timepoint getMonotonicTime();
+
+inline long long getMonotonicMicroseconds()
 {
-    return mainLooper();
+    return getMonotonicTime().time_since_epoch().count();
+}
+
+inline long getMonotonicMilliseconds()
+{
+    return (long) (getMonotonicMicroseconds() / 1000LL);
 }
 
 }

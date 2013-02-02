@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 
-#include <Looper/Looper.h>
+#include "Looper.h"
 #include <CppAwait/impl/Util.h>
 
 using namespace ut;
@@ -35,7 +35,6 @@ void setMainLooper(Looper& mainLooper)
 
 Looper::Looper(const std::string& name)
     : mName(name)
-    , mThreadId(std::numeric_limits<uint32_t>::max())
     , mQuit(false)
 {
     struct SchedulerAdapter : public AbstractScheduler
@@ -66,26 +65,28 @@ Looper::~Looper()
 
 void Looper::run()
 {
-    mThreadId = this_thread::id();
+    mThreadId = std::this_thread::get_id();
 
     mQuit = false;
     do {
-        { ScopedLock<FastMutex> lock(mMutex);
+        { UniqueLock lock(mMutex);
             do {
                 Timepoint sleepUntil = mContext.queuePending();
+                Timepoint now = getMonotonicTime();
 
-                int32_t timeout = (sleepUntil - getMonotonicTime()).milliseconds();
-                if (timeout <= 0)
+                if (sleepUntil <= now) {
                     break;
+                }
+                Timepoint::duration timeout = sleepUntil - now;
 
-                if (timeout < 2) { // busy wait if less than 2ms until trigger
+                if (timeout < std::chrono::milliseconds(2)) { // busy wait if less than 2ms until trigger
                     do {
-                        { loo::ScopedUnlock<FastMutex> _(mMutex);
-                            this_thread::yield();
-                        }
+                        mMutex.unlock();
+                        std::this_thread::yield();
+                        mMutex.lock();
                     } while (getMonotonicTime() < sleepUntil && !mContext.hasPending());
                 } else {
-                    lock.tryWait(timeout);
+                    mMutexCond.wait_for(lock, timeout);
                 }
             } while (true);
         }
@@ -94,17 +95,17 @@ void Looper::run()
         
         mContext.runQueued(&mQuit);
 
-        this_thread::yield();
+        std::this_thread::yield();
     } while (!mQuit);
 
-    { loo::ScopedLock<FastMutex> _(mMutex);
+    { LockGuard _(mMutex);
         mContext.queuePending(); // delete cancelled actions
     }
 }
 
 void Looper::quit()
 {
-    ut_assert_msg_(this_thread::id() == mThreadId, "%s - quit() called from outside the loop!", mName.c_str());
+    ut_assert_msg_(std::this_thread::get_id() == mThreadId, "%s - quit() called from outside the loop!", mName.c_str());
 
     cancelAll();
     mQuit = true;
@@ -112,12 +113,12 @@ void Looper::quit()
 
 bool Looper::cancel(Ticket ticket)
 {
-    ut_assert_msg_(this_thread::id() == mThreadId, "%s - tryCancel() called from outside the loop!", mName.c_str());
+    ut_assert_msg_(std::this_thread::get_id() == mThreadId, "%s - tryCancel() called from outside the loop!", mName.c_str());
 
     bool didCancel = mContext.tryCancelQueued(ticket);
 
     if (!didCancel) {
-        { loo::ScopedLock<FastMutex> _(mMutex);
+        { LockGuard _(mMutex);
             didCancel = mContext.tryCancelPending(ticket);
         }
     }
@@ -127,11 +128,11 @@ bool Looper::cancel(Ticket ticket)
 
 void Looper::cancelAll()
 {
-    ut_assert_msg_(this_thread::id() == mThreadId, "%s - cancelAll() called from outside the loop!", mName.c_str());
+    ut_assert_msg_(std::this_thread::get_id() == mThreadId, "%s - cancelAll() called from outside the loop!", mName.c_str());
 
     mContext.cancelAllQueued();
 
-    { loo::ScopedLock<FastMutex> _(mMutex);
+    { LockGuard _(mMutex);
         mContext.cancelAllPending();
     }
 }
@@ -142,29 +143,29 @@ void Looper::cancelAll()
 
 namespace detail
 {
-    struct _LoopContext::ManagedAction
+    struct LoopContext::ManagedAction
     {
-        ManagedAction(Ticket ticket, RepeatingAction&& action, long interval, bool catchUp)
-            : ticket(ticket), action(std::move(action)), interval(interval), catchUp(catchUp), triggerTime(0), isCancelled(false) { }
+        ManagedAction(Ticket ticket, RepeatingAction&& action, std::chrono::milliseconds interval, bool catchUp)
+            : ticket(ticket), action(std::move(action)), interval(interval), catchUp(catchUp), isCancelled(false) { }
 
         Ticket ticket;
         RepeatingAction action;
-        long interval;
+        std::chrono::milliseconds interval;
         bool catchUp;
         Timepoint triggerTime;
         bool isCancelled;
     };
 
-    _LoopContext::_LoopContext()
+    LoopContext::LoopContext()
         : mTicketCounter(100)
     {
     }
 
-    _LoopContext::~_LoopContext()
+    LoopContext::~LoopContext()
     {
     }
 
-    void _LoopContext::runQueued(bool *quit)
+    void LoopContext::runQueued(bool *quit)
     {
         Timepoint now = getMonotonicTime();
 
@@ -183,9 +184,9 @@ namespace detail
 
                 if (repeat) {
                     if (action->catchUp) {
-                        action->triggerTime.addMilli(action->interval);
+                        action->triggerTime += action->interval;
                     } else {
-                        action->triggerTime = now.plusMilli(action->interval);
+                        action->triggerTime = now + action->interval;
                     }
                 } else {
                     action->isCancelled = true;
@@ -198,7 +199,7 @@ namespace detail
         }
     }
 
-    Timepoint _LoopContext::queuePending() // must have lock
+    Timepoint LoopContext::queuePending() // must have lock
     {
         ut_foreach_(ManagedAction *action, mQueuedActions) {
             if (action->isCancelled) {
@@ -211,7 +212,7 @@ namespace detail
         mQueuedActions.clear();
         mQueuedActions.swap(mPendingActions);
 
-        Timepoint wakeTime = TIMEPOINT_MAX;
+        Timepoint wakeTime = Timepoint::max();
 
         ut_foreach_(ManagedAction *action, mQueuedActions) {
             if (action->triggerTime < wakeTime) {
@@ -222,12 +223,12 @@ namespace detail
         return wakeTime;
     }
 
-    bool _LoopContext::hasPending() // must have lock
+    bool LoopContext::hasPending() // must have lock
     {
         return !mPendingActions.empty();
     }
 
-    bool _LoopContext::tryCancelQueued(Ticket ticket)
+    bool LoopContext::tryCancelQueued(Ticket ticket)
     {
         ut_foreach_(ManagedAction *action, mQueuedActions) {
             if (action->ticket == ticket) {
@@ -243,7 +244,7 @@ namespace detail
         return false;
     }
 
-    bool _LoopContext::tryCancelPending(Ticket ticket) // must have lock
+    bool LoopContext::tryCancelPending(Ticket ticket) // must have lock
     {
         for (std::vector<ManagedAction *>::iterator it = mPendingActions.begin(), end = mPendingActions.end(); it != end; ++it) {
             ManagedAction *action = *it;
@@ -260,14 +261,14 @@ namespace detail
         return false;
     }
 
-    void _LoopContext::cancelAllQueued()
+    void LoopContext::cancelAllQueued()
     {
         ut_foreach_(ManagedAction *action, mQueuedActions) {
             action->isCancelled = true;
         }
     }
 
-    void _LoopContext::cancelAllPending() // must have lock
+    void LoopContext::cancelAllPending() // must have lock
     {
         ut_foreach_(ManagedAction *action, mPendingActions) {
             delete action;
@@ -275,7 +276,7 @@ namespace detail
         mPendingActions.clear();
     }
 
-    Ticket _LoopContext::scheduleImpl(RepeatingAction&& action, Timepoint triggerTime, long interval, bool catchUp)
+    Ticket LoopContext::scheduleImpl(RepeatingAction&& action, Timepoint triggerTime, std::chrono::milliseconds interval, bool catchUp)
     {
         ManagedAction *sa = new ManagedAction(++mTicketCounter, std::move(action), interval, catchUp);
         sa->triggerTime = triggerTime;

@@ -30,25 +30,25 @@
 
 #ifdef _MSC_VER
 
-#define UT_CONCATENATE(s1, s2)          s1##s2
-#define UT_CONCATENATE_INDIRECT(s1, s2) UT_CONCATENATE(s1, s2)
-#define UT_ANONYMOUS_VARIABLE(str)      UT_CONCATENATE_INDIRECT(str, __LINE__)
+#define ut_concatenate_(s1, s2)          s1##s2
+#define ut_concatenate_indirect_(s1, s2) ut_concatenate_(s1, s2)
+#define ut_anonymous_variable_(str)      ut_concatenate_indirect_(str, __LINE__)
 
 //
 
-#define UT_MULTI_LINE_MACRO_BEGIN \
+#define ut_multi_line_macro_begin_ \
     do { \
     __pragma(warning(push)) \
     __pragma(warning(disable:4127))
 
-#define UT_MULTI_LINE_MACRO_END \
+#define ut_multi_line_macro_end_ \
     } while(0) \
     __pragma(warning(pop))
 
 #else // not _MSC_VER
 
-#define UT_MULTI_LINE_MACRO_BEGIN do {
-#define UT_MULTI_LINE_MACRO_END } while(0)
+#define ut_multi_line_macro_begin_ do {
+#define ut_multi_line_macro_end_ } while(0)
 
 #endif // _MSC_VER
 

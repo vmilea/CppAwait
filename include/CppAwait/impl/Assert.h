@@ -29,19 +29,19 @@
 #else
 
 #define ut_assert_(_condition) \
-    UT_MULTI_LINE_MACRO_BEGIN \
+    ut_multi_line_macro_begin_ \
     if (!(_condition)) { \
         fprintf(stderr, "CPP_ASYNC ASSERT FAILED: " #_condition "\n"); \
         assert (false); \
     } \
-    UT_MULTI_LINE_MACRO_END
+    ut_multi_line_macro_end_
 
 #define ut_assert_msg_(_condition, _format, ...) \
-    UT_MULTI_LINE_MACRO_BEGIN \
+    ut_multi_line_macro_begin_ \
     if (!(_condition)) { \
         fprintf(stderr, "CPP_ASYNC ASSERT FAILED: " #_condition  " --- " _format "\n", ##__VA_ARGS__); \
         assert (false); \
     } \
-    UT_MULTI_LINE_MACRO_END
+    ut_multi_line_macro_end_
 
 #endif
