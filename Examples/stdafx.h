@@ -11,9 +11,6 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
