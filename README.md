@@ -75,11 +75,11 @@ Features
 Getting started
 ===============
 
-1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.52+ with _Boost.Context_ and _Boost.System_ compiled. Quick guide:
+1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.52+ with _Boost.Context_ and _Boost.System_ compiled [[*]](#msvc10). Quick guide:
 
    - download Boost archive
    - ./bootstrap
-   - ./b2 --build-type=minimal --with-context --toolset=your-toolset stage
+   - ./b2 --build-type=minimal --with-context --with-chrono --with-thread --toolset=your-toolset stage
 
 2. __Install [CMake](http://www.cmake.org/cmake/resources/software.html) 2.8+__
 
@@ -89,6 +89,7 @@ Getting started
    - cmake -G "your-generator" -DBOOST\_INCLUDEDIR="path-to-boost" -DBOOST\_LIBRARYDIR="path-to-boost-libs" "path-to-CppAwait"
    - open solution / make
 
+<a id="msvc10">(*)</a> Visual C++ 2010 doesn't implement the thread library. In this case _Boost.Chrono_ and _Boost.Thread_ are required to compile the examples. 
 
 
 Portability

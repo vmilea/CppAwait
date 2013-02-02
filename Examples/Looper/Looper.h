@@ -18,13 +18,11 @@
 
 #include <CppAwait/Config.h>
 #include "Chrono.h"
+#include "Thread.h"
 #include "Scheduler.h"
 #include <vector>
 #include <memory>
 #include <utility>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 
 namespace loo {
 
@@ -56,11 +54,11 @@ namespace detail
             // static_assert(std::is_convertible<Callable, std::function<void ()> >::value, "Action signature must be: () -> void");
             static_assert(std::is_void<decltype(action())>::value, "Action must return void! Use scheduleRepeating for repeating actions.");
 
-            return scheduleImpl(asRepeatingAction(std::forward<Callable>(action)), triggerTime, std::chrono::milliseconds(0), false);
+            return scheduleImpl(asRepeatingAction(std::forward<Callable>(action)), triggerTime, lchrono::milliseconds(0), false);
         }
 
         template <typename Predicate>
-        Ticket scheduleRepeating(Predicate&& action, Timepoint triggerTime, std::chrono::milliseconds interval, bool catchUp) // must have lock
+        Ticket scheduleRepeating(Predicate&& action, Timepoint triggerTime, lchrono::milliseconds interval, bool catchUp) // must have lock
         {
             // static_assert(std::is_convertible<Predicate, std::function<bool ()> >::value, "Repeating action signature must be: () -> bool");
 
@@ -103,7 +101,7 @@ namespace detail
             return Wrapper(std::forward<Callable>(callable));
         }
 
-        Ticket scheduleImpl(RepeatingAction&& action, Timepoint triggerTime, std::chrono::milliseconds interval, bool catchUp);
+        Ticket scheduleImpl(RepeatingAction&& action, Timepoint triggerTime, lchrono::milliseconds interval, bool catchUp);
 
         int mTicketCounter;
 
@@ -135,7 +133,7 @@ public:
     template <typename Callable>
     Ticket schedule(Callable&& action, long delay = 0)
     {
-        Timepoint triggerTime = getMonotonicTime() + std::chrono::milliseconds(delay);
+        Timepoint triggerTime = getMonotonicTime() + lchrono::milliseconds(delay);
 
         { LockGuard _(mMutex);
             mMutexCond.notify_one();
@@ -147,11 +145,11 @@ public:
     template <typename Predicate>
     Ticket scheduleRepeating(Predicate&& action, long delay = 0, long interval = 0, bool catchUp = false)
     {
-        Timepoint triggerTime = getMonotonicTime() + std::chrono::milliseconds(delay);
+        Timepoint triggerTime = getMonotonicTime() + lchrono::milliseconds(delay);
 
         { LockGuard _(mMutex);
             mMutexCond.notify_one();
-            return mContext.scheduleRepeating(std::forward<Predicate>(action), triggerTime, std::chrono::milliseconds(interval), catchUp);
+            return mContext.scheduleRepeating(std::forward<Predicate>(action), triggerTime, lchrono::milliseconds(interval), catchUp);
         }
 
     }
@@ -162,20 +160,20 @@ public:
     }
 
 private:
-    typedef std::timed_mutex Mutex;
-    typedef std::lock_guard<Mutex> LockGuard;
-    typedef std::unique_lock<Mutex> UniqueLock;
+    typedef lthread::timed_mutex Mutex;
+    typedef lthread::lock_guard<Mutex> LockGuard;
+    typedef lthread::unique_lock<Mutex> UniqueLock;
 
     detail::LoopContext mContext;
     
     Mutex mMutex;
-    std::condition_variable_any mMutexCond;
+    lthread::condition_variable_any mMutexCond;
     
     std::unique_ptr<AbstractScheduler> mSchedulerAdapter;
     
     std::string mName;
     
-    std::thread::id mThreadId;
+    lthread::thread::id mThreadId;
 
     bool mQuit;
 };

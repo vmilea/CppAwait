@@ -65,7 +65,7 @@ Looper::~Looper()
 
 void Looper::run()
 {
-    mThreadId = std::this_thread::get_id();
+    mThreadId = lthread::this_thread::get_id();
 
     mQuit = false;
     do {
@@ -79,10 +79,10 @@ void Looper::run()
                 }
                 Timepoint::duration timeout = sleepUntil - now;
 
-                if (timeout < std::chrono::milliseconds(2)) { // busy wait if less than 2ms until trigger
+                if (timeout < lchrono::milliseconds(2)) { // busy wait if less than 2ms until trigger
                     do {
                         mMutex.unlock();
-                        std::this_thread::yield();
+                        lthread::this_thread::yield();
                         mMutex.lock();
                     } while (getMonotonicTime() < sleepUntil && !mContext.hasPending());
                 } else {
@@ -95,7 +95,7 @@ void Looper::run()
         
         mContext.runQueued(&mQuit);
 
-        std::this_thread::yield();
+        lthread::this_thread::yield();
     } while (!mQuit);
 
     { LockGuard _(mMutex);
@@ -105,7 +105,7 @@ void Looper::run()
 
 void Looper::quit()
 {
-    ut_assert_msg_(std::this_thread::get_id() == mThreadId, "%s - quit() called from outside the loop!", mName.c_str());
+    ut_assert_msg_(lthread::this_thread::get_id() == mThreadId, "%s - quit() called from outside the loop!", mName.c_str());
 
     cancelAll();
     mQuit = true;
@@ -113,7 +113,7 @@ void Looper::quit()
 
 bool Looper::cancel(Ticket ticket)
 {
-    ut_assert_msg_(std::this_thread::get_id() == mThreadId, "%s - tryCancel() called from outside the loop!", mName.c_str());
+    ut_assert_msg_(lthread::this_thread::get_id() == mThreadId, "%s - tryCancel() called from outside the loop!", mName.c_str());
 
     bool didCancel = mContext.tryCancelQueued(ticket);
 
@@ -128,7 +128,7 @@ bool Looper::cancel(Ticket ticket)
 
 void Looper::cancelAll()
 {
-    ut_assert_msg_(std::this_thread::get_id() == mThreadId, "%s - cancelAll() called from outside the loop!", mName.c_str());
+    ut_assert_msg_(lthread::this_thread::get_id() == mThreadId, "%s - cancelAll() called from outside the loop!", mName.c_str());
 
     mContext.cancelAllQueued();
 
@@ -145,12 +145,12 @@ namespace detail
 {
     struct LoopContext::ManagedAction
     {
-        ManagedAction(Ticket ticket, RepeatingAction&& action, std::chrono::milliseconds interval, bool catchUp)
+        ManagedAction(Ticket ticket, RepeatingAction&& action, lchrono::milliseconds interval, bool catchUp)
             : ticket(ticket), action(std::move(action)), interval(interval), catchUp(catchUp), isCancelled(false) { }
 
         Ticket ticket;
         RepeatingAction action;
-        std::chrono::milliseconds interval;
+        lchrono::milliseconds interval;
         bool catchUp;
         Timepoint triggerTime;
         bool isCancelled;
@@ -276,7 +276,7 @@ namespace detail
         mPendingActions.clear();
     }
 
-    Ticket LoopContext::scheduleImpl(RepeatingAction&& action, Timepoint triggerTime, std::chrono::milliseconds interval, bool catchUp)
+    Ticket LoopContext::scheduleImpl(RepeatingAction&& action, Timepoint triggerTime, lchrono::milliseconds interval, bool catchUp)
     {
         ManagedAction *sa = new ManagedAction(++mTicketCounter, std::move(action), interval, catchUp);
         sa->triggerTime = triggerTime;

@@ -17,28 +17,39 @@
 #pragma once
 
 #include <CppAwait/Config.h>
-#include "Thread.h"
+
+#if (_MSC_VER < 1700)
+
+// MSVC10 doesn't implement chrono & thread, fallback to Boost
+
+#include <boost/chrono.hpp>
+#include <boost/thread.hpp>
 
 namespace loo {
-    
-typedef lchrono::time_point<lchrono::high_resolution_clock, lchrono::microseconds> Timepoint;
+    namespace lchrono {
+        using namespace boost::chrono;
+    }
 
-//
-// utility functions
-//
-
-void rebaseMonotonicTime();
-
-Timepoint getMonotonicTime();
-
-inline long long getMonotonicMicroseconds()
-{
-    return getMonotonicTime().time_since_epoch().count();
+    namespace lthread {
+        using namespace boost;
+    }
 }
 
-inline long getMonotonicMilliseconds()
-{
-    return (long) (getMonotonicMicroseconds() / 1000LL);
+#else
+
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
+namespace loo {
+    namespace lchrono {
+        using namespace std::chrono;
+    }
+
+    namespace lthread {
+        using namespace std;
+    }
 }
 
-}
+#endif

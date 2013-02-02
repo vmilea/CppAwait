@@ -22,14 +22,14 @@ static Timepoint sBaseTime;
 
 void rebaseMonotonicTime()
 {
-    sBaseTime = std::chrono::time_point_cast<Timepoint::duration>(
+    sBaseTime = lchrono::time_point_cast<Timepoint::duration>(
         Timepoint::clock::now());
 }
 
 Timepoint getMonotonicTime()
 {
     return Timepoint(
-        std::chrono::duration_cast<Timepoint::duration>(
+        lchrono::duration_cast<Timepoint::duration>(
             Timepoint::clock::now() - sBaseTime));
 }
 

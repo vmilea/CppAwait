@@ -18,7 +18,21 @@ include (enable_max_warning_level)
 set (Boost_USE_STATIC_RUNTIME OFF)
 set (Boost_USE_STATIC_LIBS ON)
 
-find_package (Boost 1.52.0 REQUIRED COMPONENTS context system)
+if (MSVC10)
+    # MSVC10 doesn't implement chrono & thread, fallback to Boost
+    set (_boost_deps context system chrono thread)
+
+    # mingw-gcc fails to link boost::thread
+    if (WIN32 AND CMAKE_COMPILER_IS_GNUCXX)
+        add_definitions (-DBOOST_THREAD_USE_LIB)
+    endif()
+else()
+    set (_boost_deps context system)
+endif()
+
+message ("Boost dependencies: ${_boost_deps}")
+
+find_package (Boost 1.52.0 REQUIRED COMPONENTS ${_boost_deps})
 include_directories (${Boost_INCLUDE_DIRS})
 
 # disable Boost autolinking
