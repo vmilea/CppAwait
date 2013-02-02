@@ -1,7 +1,7 @@
 CppAwait
 ========
 
-CppAwait is a portable library that brings the await operator from C# 5 to C++. It uses stackful coroutines ( _Boost.Context_ ) instead of compiler magic to get the same job done.
+CppAwait is a portable library that brings the await operator from C# 5 to C++. It uses stackful coroutines (_Boost.Context_) instead of compiler magic to get the same job done.
 
 
 
@@ -75,13 +75,13 @@ Features
 Getting started
 ===============
 
-1. __Install Boost.__ To use CppAwait you need Boost 1.52+ with _Boost.Context_ and _Boost.System_ compiled. Quick guide:
+1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.52+ with _Boost.Context_ and _Boost.System_ compiled. Quick guide:
 
-   - get latest archive from [Boost](http://www.boost.org/users/download/)
+   - download Boost archive
    - ./bootstrap
    - ./b2 --build-type=minimal --with-context --toolset=your-toolset stage
 
-2. __Install [CMake 2.8+](http://www.cmake.org/cmake/resources/software.html)__
+2. __Install [CMake](http://www.cmake.org/cmake/resources/software.html) 2.8+__
 
 3. __Build CppAwait__:
 

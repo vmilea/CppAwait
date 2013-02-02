@@ -104,8 +104,8 @@ void ex_awaitBasics()
     ut::initMainContext();
 
     // Your application needs a run loop, otherwise there's no way to awake from await.
-    // CppAwait has three hooks -- schedule()/scheduleDelayed()/cancelScheduled() -- that
-    // should be implemented using your API of choice (Qt/GLib/MFC/...).
+    // CppAwait has two hooks -- scheduleDelayed() and cancelScheduled() -- that must
+    // be implemented using your API of choice (Qt/GLib/MFC/...).
     // 
     // here we just use a custom run loop
     loo::Looper mainLooper("main");

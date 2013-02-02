@@ -36,7 +36,7 @@ const std::array<std::pair<ExampleFunc, std::string>, 6> EXAMPLES =
     std::make_pair(&ex_comboDetector, "coroutines - combo detector"),
     std::make_pair(&ex_awaitBasics, "await - basics"),
     std::make_pair(&ex_awaitHttpClient, "await - HTTP client"),
-    std::make_pair(&ex_awaitFlickr, "await - Flickr client"),
+    std::make_pair(&ex_awaitFlickr, "await - Flickr client")
 } };
 
 int main(int argc, char** argv)

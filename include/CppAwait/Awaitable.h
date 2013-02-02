@@ -38,7 +38,10 @@ typedef int Ticket;
 
 Ticket scheduleDelayed(long delay, Runnable runnable);
 
-Ticket schedule(Runnable runnable);
+inline Ticket schedule(Runnable runnable)
+{
+    return scheduleDelayed(0, std::move(runnable));
+}
 
 bool cancelScheduled(Ticket ticket);
 

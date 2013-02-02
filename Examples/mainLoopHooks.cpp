@@ -24,11 +24,6 @@ Ticket scheduleDelayed(long delay, Runnable runnable)
     return (Ticket) loo::mainLooper().schedule(runnable, delay);
 }
 
-Ticket schedule(Runnable runnable)
-{
-    return (Ticket) loo::mainLooper().schedule(runnable);
-}
-
 bool cancelScheduled(Ticket ticket)
 {
     return loo::mainLooper().cancel(ticket);
