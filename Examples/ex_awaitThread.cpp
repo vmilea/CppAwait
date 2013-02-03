@@ -38,9 +38,9 @@ static ut::AwaitableHandle asyncCountdown()
 {
     return ut::startAsync("asyncCountdown", [](ut::Awaitable * /* awtSelf */) {
         ut::StackContext *context = ut::currentContext();
-        condition_variable_any cond;
-        timed_mutex mutex;
         
+        timed_mutex mutex;
+        condition_variable_any cond;
         bool isInterrupted = false;
         ut::Ticket completionTicket = 0;
 
@@ -94,15 +94,20 @@ static ut::AwaitableHandle asyncKey()
     return ut::startAsync("asyncKey", [](ut::Awaitable * /* awtSelf */) {
         ut::StackContext *context = ut::currentContext();
 
+        timed_mutex mutex;
         ut::Ticket completionTicket = 0;
 
         thread keyThread([&]() {
+            lock_guard<timed_mutex> _(mutex);
+
             // Wait for user to hit [Return]. For illustration only. Relying on blocking
             // calls is bad practice, an awaitable should handle interruption quickly.
             readLine();
-            
+
             completionTicket = ut::schedule([&]() {
-                completionTicket = 0;
+                { lock_guard<timed_mutex> _(mutex);
+                    completionTicket = 0;
+                }
                 ut::yieldTo(context);
             });
         });
