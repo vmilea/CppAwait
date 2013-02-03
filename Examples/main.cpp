@@ -28,15 +28,17 @@ void ex_comboDetector();
 void ex_awaitBasics();
 void ex_awaitHttpClient();
 void ex_awaitFlickr();
+void ex_awaitThread();
 
-const std::array<std::pair<ExampleFunc, std::string>, 6> EXAMPLES =
+const std::array<std::pair<ExampleFunc, std::string>, 7> EXAMPLES =
 { {
     std::make_pair(&ex_fibonacci, "coroutines - fibonacci sequence generator"),
     std::make_pair(&ex_iterator, "coroutines - collection iterator"),
     std::make_pair(&ex_comboDetector, "coroutines - combo detector"),
     std::make_pair(&ex_awaitBasics, "await - basics"),
     std::make_pair(&ex_awaitHttpClient, "await - HTTP client"),
-    std::make_pair(&ex_awaitFlickr, "await - Flickr client")
+    std::make_pair(&ex_awaitFlickr, "await - Flickr client"),
+    std::make_pair(&ex_awaitThread, "await - threads example")
 } };
 
 int main(int argc, char** argv)
