@@ -14,6 +14,7 @@
 * limitations under the License.
 */
 
+#include "ConfigPrivate.h"
 #include <CppAwait/AsioWrappers.h>
 #include <CppAwait/impl/Util.h>
 #include <boost/algorithm/string.hpp>

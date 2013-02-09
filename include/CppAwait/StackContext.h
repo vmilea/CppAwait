@@ -42,6 +42,7 @@ class StackContext
 {
 public:
     static size_t minimumStackSize();
+    static size_t maximumStackSize();
     static size_t defaultStackSize();
     static void setDefaultStackSize(size_t size);
     static void drainContextPool();

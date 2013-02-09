@@ -14,6 +14,7 @@
 * limitations under the License.
 */
 
+#include "ConfigPrivate.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/impl/Util.h>
 #include <cstdio>

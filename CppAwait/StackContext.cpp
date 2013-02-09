@@ -14,12 +14,19 @@
 * limitations under the License.
 */
 
+#include "ConfigPrivate.h"
 #include <CppAwait/StackContext.h>
 #include <CppAwait/impl/Util.h>
 #include <map>
 #include <algorithm>
 #include <cstdio>
 #include <boost/context/all.hpp>
+
+// guarded stack allocator has moved to boost/coroutine since Boost 1.53
+//
+#if BOOST_VERSION > 105200
+#include <boost/coroutine/stack_allocator.hpp>
+#endif
 
 namespace ut {
     
@@ -86,12 +93,31 @@ public:
         mStacks.clear();
     }
 
+    static size_t maximumStackSize()
+    {
+        return Allocator::maximum_stacksize();
+    }
+
+    static size_t defaultStackSize()
+    {
+        return Allocator::default_stacksize();
+    }
+
+    static size_t minimumStackSize()
+    {
+        return Allocator::minimum_stacksize();
+    }
+
 private:
     typedef std::multimap<size_t, void*> StackMap;
 
-    ctx::guarded_stack_allocator mAllocator;
-    // ctx::simple_stack_allocator<1048576, 65536, 32768> mAllocator;
+#if BOOST_VERSION == 105200
+    typedef ctx::guarded_stack_allocator Allocator;
+#else
+    typedef boost::coroutines::stack_allocator Allocator;
+#endif
 
+    Allocator mAllocator;
     StackMap mStacks;
 };
 
@@ -105,13 +131,18 @@ size_t StackContext::sDefaultStackSize = 0;
 
 size_t StackContext::minimumStackSize()
 {
-    return ctx::guarded_stack_allocator::minimum_stacksize();
+    return StackPool::minimumStackSize();
+}
+
+size_t StackContext::maximumStackSize()
+{
+    return StackPool::maximumStackSize();
 }
 
 size_t StackContext::defaultStackSize()
 {
     if (sDefaultStackSize == 0) {
-        sDefaultStackSize = ctx::guarded_stack_allocator::default_stacksize();
+        sDefaultStackSize = StackPool::defaultStackSize();
     }
 
     return sDefaultStackSize;

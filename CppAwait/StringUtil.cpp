@@ -14,6 +14,7 @@
 * limitations under the License.
 */
 
+#include "ConfigPrivate.h"
 #include <CppAwait/impl/StringUtil.h>
 #include <CppAwait/impl/Assert.h>
 
