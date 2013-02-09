@@ -204,9 +204,9 @@ StackContext::StackContext()
 
 StackContext::~StackContext()
 {
-    ut_log_verbose_("- destroy context '%s'", mImpl->tag.c_str());
-
     if (mImpl) {
+        ut_log_verbose_("- destroy context '%s'", mImpl->tag.c_str());
+
         if (this != sMainContext) {
             ut_assert_(!isRunning() && "can't delete a running context");
 
@@ -219,6 +219,8 @@ StackContext::~StackContext()
         } else {
             delete mImpl->fc;
         }
+    } else {
+        ut_log_verbose_("- destroy moved context");
     }
 }
 

@@ -1,7 +1,6 @@
 #include "ExUtil.h"
 #include "Looper/Looper.h"
 #include <CppAwait/StackContext.h>
-#include <CppAwait/YieldCollection.h>
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <string>

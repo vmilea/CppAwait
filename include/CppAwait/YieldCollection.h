@@ -21,10 +21,12 @@
 #include "StackContext.h"
 #include <iterator>
 
+#define YC_DONE ((void *) -1)
+
 namespace ut {
 
 //
-// YieldCollection (experimental, used for iterable generators)
+// YieldCollection (for easier iteration over generators)
 //
 
 template <typename T>
@@ -39,21 +41,16 @@ public:
         , mCurrentValue(nullptr)
     {
         mContext.start([=](void *startValue) {
-            try {
-                coroutine(startValue);
-            } catch (const InterruptedException&) {
-            }
+            coroutine(startValue);
+            mCurrentValue = YC_DONE;
         });
     }
 
     ~YieldCollection()
     {
-        if (mContext) {
-            if (mCurrentValue == nullptr) {
-                yieldTo(&mContext);
-            } else {
-                yieldExceptionTo(&mContext, InterruptedException());
-            }
+        if (mCurrentValue != YC_DONE) {
+            ut_assert_(mContext.isRunning());
+            interruptContext(&mContext);
         }
     }
 
@@ -61,7 +58,7 @@ public:
         : mContext(std::move(other.mContext))
         , mCurrentValue(other.mCurrentValue)
     {
-        other.mCurrentValue = nullptr;
+        other.mCurrentValue = YC_DONE;
     }
 
     YieldCollection& operator=(YieldCollection&& other)
@@ -69,13 +66,13 @@ public:
         if (this != &other) {
             mContext = std::move(other.mContext);
             mCurrentValue = other.mCurrentValue;
-            other.mCurrentValue = nullptr;
+            other.mCurrentValue = YC_DONE;
         }
     }
 
     iterator begin()
     {
-        ut_assert_(mContext);
+        ut_assert_(mCurrentValue != YC_DONE);
 
         Iterator it(this);
         return ++it;
@@ -98,18 +95,33 @@ public:
         T& operator*()
         {
             ut_assert_(mContainer != nullptr);
+            ut_assert_(mContainer->mCurrentValue != nullptr);
+            ut_assert_(mContainer->mCurrentValue != YC_DONE);
 
-            return *mContainer->mCurrentValue;
+            return *((T *) mContainer->mCurrentValue);
         }
 
         Iterator& operator++()
         {
-            if (mContainer != nullptr) {
-                mContainer->mCurrentValue = (T *) yieldTo(&mContainer->mContext);
+            ut_assert_(mContainer != nullptr);
+            ut_assert_(mContainer->mCurrentValue != YC_DONE);
 
-                if (mContainer->mCurrentValue == nullptr) {
+            try {
+                void *value = yieldTo(&mContainer->mContext);
+
+                if (mContainer->mCurrentValue == YC_DONE) { // coroutine has finished
                     mContainer = nullptr;
+                } else { // coroutine has yielded
+                    ut_assert_(value != nullptr && "you may not yield nullptr from coroutine");
+                    mContainer->mCurrentValue = value;
                 }
+            } catch (const InterruptedException&) { // coroutine interrupted, swallow exception
+                mContainer->mCurrentValue = YC_DONE;
+                mContainer = nullptr;
+            } catch (...) { // propagate other exceptions thrown by coroutine
+                mContainer->mCurrentValue = YC_DONE;
+                mContainer = nullptr;
+                throw;
             }
 
             return *this;
@@ -136,7 +148,7 @@ public:
 
 private:
     StackContext mContext;
-    T *mCurrentValue;
+    void *mCurrentValue;
 };
 
 }

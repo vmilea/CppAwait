@@ -32,8 +32,7 @@ static void filteredIterator(const C& collection, P predicate)
         }
     }
 
-    // yield nullptr to finish iterating over YieldCollection 
-    ut::yield();
+    // simply return to finish iteration
 }
 
 void ex_iterator()
