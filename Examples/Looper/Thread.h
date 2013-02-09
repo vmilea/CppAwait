@@ -18,24 +18,17 @@
 
 #include <CppAwait/Config.h>
 
-#if (_MSC_VER < 1700)
+#define UT_HAVE_STD_THREAD
 
 // MSVC10 doesn't implement chrono & thread, fallback to Boost
+//
+#ifdef BOOST_MSVC
+# if (BOOST_MSVC < 1700)
+#  undef UT_HAVE_STD_THREAD
+# endif
+#endif
 
-#include <boost/chrono.hpp>
-#include <boost/thread.hpp>
-
-namespace loo {
-    namespace lchrono {
-        using namespace boost::chrono;
-    }
-
-    namespace lthread {
-        using namespace boost;
-    }
-}
-
-#else
+#ifdef UT_HAVE_STD_THREAD
 
 #include <chrono>
 #include <thread>
@@ -49,6 +42,21 @@ namespace loo {
 
     namespace lthread {
         using namespace std;
+    }
+}
+
+#else
+
+#include <boost/chrono.hpp>
+#include <boost/thread.hpp>
+
+namespace loo {
+    namespace lchrono {
+        using namespace boost::chrono;
+    }
+
+    namespace lthread {
+        using namespace boost;
     }
 }
 

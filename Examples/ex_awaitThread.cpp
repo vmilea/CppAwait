@@ -17,10 +17,6 @@
 #include "ExUtil.h"
 #include <CppAwait/Awaitable.h>
 #include <Looper/Looper.h>
-#include <algorithm>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <random>
 #include <cmath>
 
@@ -60,9 +56,12 @@ static ut::AwaitableHandle asyncCountdown()
             } else {
                 printf ("liftoff!\n");
 
+                // MSVC10 workaround, inner lambda can't access captured variable
+                timed_mutex& lambdaMutex = mutex;
+
                 // resume awaitable, must do it from main thread
                 completionTicket = ut::schedule([&]() {
-                    { lock_guard<timed_mutex> _(mutex);
+                    { lock_guard<timed_mutex> _(lambdaMutex);
                         completionTicket = 0;
                     }
                     ut::yieldTo(context);
@@ -104,8 +103,11 @@ static ut::AwaitableHandle asyncKey()
             // calls is bad practice, an awaitable should handle interruption quickly.
             readLine();
 
+            // MSVC10 workaround, inner lambda can't access captured variable
+            timed_mutex& lambdaMutex = mutex;
+
             completionTicket = ut::schedule([&]() {
-                { lock_guard<timed_mutex> _(mutex);
+                { lock_guard<timed_mutex> _(lambdaMutex);
                     completionTicket = 0;
                 }
                 ut::yieldTo(context);
@@ -132,14 +134,13 @@ static ut::AwaitableHandle asyncThread()
         printf ("hit [Return] to abort launch\n\n");
         
         {
-            std::array<ut::AwaitableHandle, 2> awts = { {
-                asyncCountdown(), asyncKey()
-            } };
-        
-            // wait until liftoff or abort
-            auto pos = ut::awaitAny(awts);
+            ut::AwaitableHandle awtCountdown = asyncCountdown();
+            ut::AwaitableHandle awtKey = asyncKey();
 
-            if (pos == awts.begin()) {
+            // wait until liftoff or abort
+            ut::AwaitableHandle& completed = ut::awaitAny(awtCountdown, awtKey);
+
+            if (completed == awtCountdown) {
                 printf ("\nDONE. HIT RETURN TO QUIT...\n");
             } else {
                 printf ("\nINTERRUPTED\n");
