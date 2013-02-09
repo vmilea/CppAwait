@@ -26,6 +26,7 @@
 #include <exception>
 #include <functional>
 #include <vector>
+#include <array>
 
 namespace ut {
 
@@ -130,6 +131,11 @@ inline Awaitable* selectAwaitable(AwaitableHandle& element)
     return element.get();
 }
 
+inline Awaitable* selectAwaitable(AwaitableHandle *element)
+{
+    return element->get();
+}
+
 template <typename First, typename Second>
 Awaitable* selectAwaitable(std::pair<First, Second>& element)
 {
@@ -210,6 +216,124 @@ typename Collection::iterator awaitAny(Collection& awaitables)
     ut_assert_(completedAwt->isDone());
 
     return completedPos;
+}
+
+// convenience overloads
+
+inline void awaitAll(Awaitable *awt1, Awaitable *awt2)
+{
+    ut_assert_(awt1 && awt2);
+
+    std::array<Awaitable*, 2> awts = {{ awt1, awt2 }};
+    awaitAll(awts);
+}
+
+inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3)
+{
+    ut_assert_(awt1 && awt2 && awt3);
+
+    std::array<Awaitable*, 3> awts = {{ awt1, awt2, awt3 }};
+    awaitAll(awts);
+}
+
+inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4)
+{
+    ut_assert_(awt1 && awt2 && awt3 && awt4);
+
+    std::array<Awaitable*, 4> awts = {{ awt1, awt2, awt3, awt4 }};
+    awaitAll(awts);
+}
+
+inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4, Awaitable *awt5)
+{
+    ut_assert_(awt1 && awt2 && awt3 && awt4 && awt5);
+
+    std::array<Awaitable*, 5> awts = {{ awt1, awt2, awt3, awt4, awt5 }};
+    awaitAll(awts);
+}
+
+inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2)
+{
+    return awaitAll(awt1.get(), awt2.get());
+}
+
+inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3)
+{
+    return awaitAll(awt1.get(), awt2.get(), awt3.get());
+}
+
+inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4)
+{
+    return awaitAll(awt1.get(), awt2.get(), awt3.get(), awt4.get());
+}
+
+inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4, AwaitableHandle& awt5)
+{
+    return awaitAll(awt1.get(), awt2.get(), awt3.get(), awt4.get(), awt5.get());
+}
+
+inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2)
+{
+    ut_assert_(awt1 && awt2);
+
+    std::array<Awaitable*, 2> awts = {{ awt1, awt2 }};
+    return *awaitAny(awts);
+}
+
+inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3)
+{
+    ut_assert_(awt1 && awt2 && awt3);
+
+    std::array<Awaitable*, 3> awts = {{ awt1, awt2, awt3 }};
+    return *awaitAny(awts);
+}
+
+inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4)
+{
+    ut_assert_(awt1 && awt2 && awt3 && awt4);
+
+    std::array<Awaitable*, 4> awts = {{ awt1, awt2, awt3, awt4 }};
+    return *awaitAny(awts);
+}
+
+inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4, Awaitable *awt5)
+{
+    ut_assert_(awt1 && awt2 && awt3 && awt4 && awt5);
+
+    std::array<Awaitable*, 5> awts = {{ awt1, awt2, awt3, awt4, awt5 }};
+    return *awaitAny(awts);
+}
+
+inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2)
+{
+    ut_assert_(awt1 && awt2);
+
+    std::array<AwaitableHandle*, 2> awts = {{ &awt1, &awt2 }};
+    return **awaitAny(awts);
+}
+
+inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3)
+{
+    ut_assert_(awt1 && awt2 && awt3);
+
+    std::array<AwaitableHandle*, 3> awts = {{ &awt1, &awt2, &awt3 }};
+    return **awaitAny(awts);
+}
+
+inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4)
+{
+    ut_assert_(awt1 && awt2 && awt3 && awt4);
+
+    std::array<AwaitableHandle*, 4> awts = {{ &awt1, &awt2, &awt3, &awt4 }};
+    return **awaitAny(awts);
+}
+
+inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4, AwaitableHandle& awt5)
+{
+    ut_assert_(awt1 && awt2 && awt3 && awt4 && awt5);
+
+    std::array<AwaitableHandle*, 5> awts = {{ &awt1, &awt2, &awt3, &awt4, &awt5 }};
+    return **awaitAny(awts);
 }
 
 //
