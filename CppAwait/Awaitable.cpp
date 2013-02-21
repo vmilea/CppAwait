@@ -64,7 +64,7 @@ Awaitable::~Awaitable()
 
         if (mBoundContext != nullptr && mBoundContext->isRunning()) {
             ut_log_debug_("* unwinding bound context '%s'", mBoundContext->tag());
-            
+
             mBoundContext->setParent(currentContext());
             yieldTo(mBoundContext); // resume context to unwind stack
         }
@@ -80,16 +80,18 @@ Awaitable::~Awaitable()
         }
 
         if (mBoundContext != nullptr) {
-            ut_log_debug_("* interrupting bound context '%s'", mBoundContext->tag());
-            ut_assert_(mBoundContext->isRunning());
-            
-            mBoundContext->setParent(currentContext());
-            try {
-                yieldExceptionTo(mBoundContext, InterruptedException()); // interrupt context
-            } catch (...) {
+            ut_log_debug_("* force unwinding of bound context '%s'", mBoundContext->tag());
+
+            if (std::uncaught_exception()) {
+                ut_log_debug_("  got uncaught exception");
             }
+
+            ut_assert_(mBoundContext->isRunning());
+
+            mBoundContext->setParent(currentContext());
+            forceUnwind(mBoundContext);
         } else {
-            fail(ut::make_exception_ptr(InterruptedException()));
+            fail(YieldForbidden::ptr());
         }
     }
 
@@ -195,7 +197,7 @@ void Awaitable::fail(std::exception_ptr eptr)
         if (currentContext() != mainContext() && currentContext() != mBoundContext) {
             ut_assert_(false && "called from wrong context");
         }
-        
+
         yieldTo(mAwaitingContext, this);
     }
 }
@@ -225,6 +227,9 @@ Awaitable::Awaitable()
     , mDidComplete(false)
     , mUserData(nullptr)
 {
+    if (sScheduleDelayed == nullptr || sCancelScheduled == nullptr) {
+        throw std::runtime_error("Scheduler hooks not setup, you must call initScheduler()");
+    }
 }
 
 //
@@ -237,38 +242,60 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
     awt->setTag(tag);
 
     ut_log_debug_("* starting awt '%s'", tag.c_str());
-    
+
     StackContext *context = new StackContext(tag, [awt, func](void *) {
+        std::exception_ptr eptr;
+
         try {
             func(awt);
+
+            ut_log_debug_("* awt '%s' done", awt->tag());
 
             ut_assert_(!awt->didFail());
 
             if (!awt->didComplete()) {
                 if (awt->mAwaitingContext != nullptr)  {
-                    // don't yield on complete, instead wait until context unwinded
+                    // don't yield on complete, instead wait until context fully unwinded
                     awt->mBoundContext->setParent(awt->mAwaitingContext);
                     awt->mAwaitingContext = nullptr;
                 }
 
                 awt->complete(); // mAwaitingContext is null, won't yield
             }
+        } catch (const ForcedUnwind&) {
+            ut_log_debug_("* awt '%s' done (forced unwind)", awt->tag());
+
+            // If an Awaitable is being destroyed during propagation of some exception,
+            // and the Awaitable is not yet done, it will interrupt itself via ForcedUnwind.
+            // In this case, std::current_exception is unreliable: on MSVC it will return
+            // empty inside the catch block of the inner exception. As workaround we use
+            // a premade exception_ptr.
+
+            eptr = ForcedUnwind::ptr();
         } catch (...) {
+            ut_log_debug_("* awt '%s' done (exception)", awt->tag());
+
+            ut_assert_(!std::uncaught_exception() && "may not throw from AsyncFunc while another exception is propagating");
+
+            eptr = std::current_exception();
+            ut_assert_(!(eptr == std::exception_ptr()));
+        }
+
+        if (!(eptr == std::exception_ptr())) {
             ut_assert_(!awt->didFail());
             ut_assert_(!awt->didComplete());
 
-            std::exception_ptr eptr = std::current_exception();
-
-            if (!(eptr == std::exception_ptr())) {
-                if (awt->mAwaitingContext != nullptr)  {
-                    // don't yield on fail, instead wait until context unwinded
-                    awt->mBoundContext->setParent(awt->mAwaitingContext);
-                    awt->mAwaitingContext = nullptr;
-                }
-
-                awt->fail(eptr);  // mAwaitingContext is null, won't yield
+            if (awt->mAwaitingContext != nullptr)  {
+                // don't yield on fail, instead wait until context fully unwinded
+                awt->mBoundContext->setParent(awt->mAwaitingContext);
+                awt->mAwaitingContext = nullptr;
             }
+
+            awt->fail(eptr);  // mAwaitingContext is null, won't yield
         }
+
+        // This function will never throw an exception. Instead, exceptions
+        // are stored in the Awaitable and get rethrown on await().
     }, stackSize);
 
     context->setParent(mainContext());
@@ -286,7 +313,7 @@ AwaitableHandle asyncDelay(long delay)
 {
     Completable *awt = new Completable();
     awt->setTag(string_printf("async-delay-%ld", delay));
-    
+
     Ticket ticket = scheduleDelayed(delay, [delay, awt] {
         awt->complete();
     });

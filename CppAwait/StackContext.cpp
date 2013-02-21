@@ -35,6 +35,9 @@ namespace ctx = boost::context;
 static StackContext *sMainContext = nullptr;
 static StackContext *sCurrentContext = nullptr;
 
+static std::exception_ptr sForcedUnwindPtr;
+static std::exception_ptr sYieldForbiddenPtr;
+
 
 //
 // main/current context
@@ -50,6 +53,12 @@ void initMainContext()
 
     sMainContext = new StackContext();
     sCurrentContext = sMainContext;
+
+    // make some exception_ptr in advance to avoid problems
+    // with std::current_exception() during exception propagation
+    //
+    sForcedUnwindPtr = ut::make_exception_ptr(ForcedUnwind());
+    sYieldForbiddenPtr = ut::make_exception_ptr(YieldForbidden());
 }
 
 StackContext* mainContext()
@@ -164,6 +173,27 @@ private:
 
 static StackPool sPool;
 
+
+//
+// ForcedUnwind
+//
+
+std::exception_ptr ForcedUnwind::ptr()
+{
+    return sForcedUnwindPtr;
+}
+
+
+//
+// YieldForbidden
+//
+
+std::exception_ptr YieldForbidden::ptr()
+{
+    return sYieldForbiddenPtr;
+}
+
+
 //
 // StackContext
 //
@@ -207,7 +237,7 @@ struct StackContext::Impl
     StackContext *parent;
     StackContext::Coroutine coroutine;
     bool isRunning;
-    bool isUnwinded;
+    bool isFullyUnwinded;
     Runnable postRunAction;
 
     Impl(const std::string& tag, const std::pair<void *, size_t>& stack)
@@ -216,12 +246,16 @@ struct StackContext::Impl
         , fc(nullptr)
         , parent(nullptr)
         , isRunning(false)
-        , isUnwinded(true) { }
+        , isFullyUnwinded(true) { }
 };
 
 StackContext::StackContext(const std::string& tag, Coroutine coroutine, size_t stackSize)
     : mImpl(new Impl(tag, sPool.obtain(stackSize)))
 {
+    if (sMainContext == nullptr) {
+        initMainContext();
+    }
+
     ut_log_verbose_("- create context '%s'", mImpl->tag.c_str());
 
     start(std::move(coroutine));
@@ -240,7 +274,7 @@ StackContext::StackContext()
 
     mImpl->fc = new ctx::fcontext_t();
     mImpl->isRunning = true;
-    mImpl->isUnwinded = false;
+    mImpl->isFullyUnwinded = false;
 }
 
 StackContext::~StackContext()
@@ -251,7 +285,7 @@ StackContext::~StackContext()
         if (this != sMainContext) {
             ut_assert_(!isRunning() && "can't delete a running context");
 
-            if (!mImpl->isUnwinded) {
+            if (!mImpl->isFullyUnwinded) {
                 setParent(currentContext());
                 currentContext()->yieldTo(this);
             }
@@ -304,7 +338,7 @@ void StackContext::start(Coroutine coroutine)
     mImpl->fc = ctx::make_fcontext(mImpl->stack.first, mImpl->stack.second, &StackContext::contextFunc);
 
     mImpl->isRunning = true;
-    mImpl->isUnwinded = false;
+    mImpl->isFullyUnwinded = false;
 
     currentContext()->implYieldTo(this, YT_RESULT, this);
 }
@@ -338,17 +372,23 @@ void* StackContext::implYieldTo(StackContext *resumeContext, YieldType type, voi
     ut_assert_(sCurrentContext == this);
     ut_assert_(resumeContext != nullptr);
     ut_assert_(resumeContext != this);
-    ut_assert_(!(resumeContext->mImpl->isUnwinded));
+    ut_assert_(!(resumeContext->mImpl->isFullyUnwinded));
+
+    // ut_log_info_("-- jumping to '%s', type = %s", resumeContext->tag(), (type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
     sCurrentContext = resumeContext;
 
     YieldValue ySent(type, value);
     auto yReceived = (YieldValue *) ctx::jump_fcontext(mImpl->fc, resumeContext->mImpl->fc, (intptr_t) &ySent);
 
-    // ut_log_info_("-- back from yield, type = %s", (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
+    // ut_log_info_("-- back to '%s', type = %s", sCurrentContext->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
     if (yReceived->type == YT_EXCEPTION) {
         auto exPtr = (std::exception_ptr *) yReceived->value;
+
+        ut_assert_(exPtr != nullptr);
+        ut_assert_(!(*exPtr == std::exception_ptr()));
+
         std::rethrow_exception(*exPtr);
         return nullptr;
     } else {
@@ -378,15 +418,22 @@ void StackContext::contextFunc(intptr_t data)
     try {
         void *value = context->implYieldTo(context->parent(), YT_RESULT, nullptr);
 
-        ut_log_debug_("- context '%s' starts running", context->tag());
+        ut_log_debug_("- context '%s' func starting", context->tag());
         context->mImpl->coroutine(value);
-        ut_log_debug_("- context '%s' done running", context->tag());
+        ut_log_debug_("- context '%s' func done", context->tag());
 
+    } catch (const ForcedUnwind&) {
+        ut_log_debug_("- context '%s' func done (forced unwind)", context->tag());
     } catch (...) {
-        ut_log_debug_("- context '%s' terminated with exception", context->tag());
+        ut_log_debug_("- context '%s' func done (exception)", context->tag());
+
+        ut_assert_(!std::uncaught_exception() && "may not throw from Coroutine while another exception is propagating");
+
+        std::exception_ptr eptr = std::current_exception();
+        ut_assert_(!(eptr == std::exception_ptr()));
 
         // [MSVC] may not yield from catch block
-        peptr = new std::exception_ptr(std::current_exception());
+        peptr = new std::exception_ptr(eptr);
     }
 
     context->mImpl->isRunning = false;
@@ -394,7 +441,7 @@ void StackContext::contextFunc(intptr_t data)
     if (peptr != nullptr) {
         // Yielding an exception is trickier because we need to get back here
         // in order to delete the exception_ptr. To make this work the context
-        // briefly resumes in destructor if isUnwinded false.
+        // briefly resumes in destructor if isFullyUnwinded false.
 
         try {
             context->yieldException(*peptr);
@@ -406,12 +453,12 @@ void StackContext::contextFunc(intptr_t data)
         delete peptr;
     }
 
-    // all remaining objects on stack have trivial destructors, context considered unwinded
+    // all remaining objects on stack have trivial destructors, context considered fully unwinded
 
     try {
-        context->mImpl->isUnwinded = true;
+        context->mImpl->isFullyUnwinded = true;
         context->yield();
-        ut_assert_(false && "yielded back to unwinded context");
+        ut_assert_(false && "yielded back to fully unwinded context");
     } catch (...) {
         ut_assert_(false && "post run exception");
     }

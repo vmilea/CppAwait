@@ -72,7 +72,7 @@ static ut::AwaitableHandle asyncCountdown()
 
         try {
             ut::yield();
-        } catch (const ut::InterruptedException&) {
+        } catch (const ut::ForcedUnwind&) {
             // launch aborted, interrupt countdown thread
             lock_guard<timed_mutex> _(mutex);
             isInterrupted = true;
@@ -117,7 +117,7 @@ static ut::AwaitableHandle asyncKey()
 
         try {
             ut::yield();
-        } catch (const ut::InterruptedException&) {
+        } catch (const ut::ForcedUnwind&) {
         }
         
         keyThread.join();

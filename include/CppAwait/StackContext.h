@@ -18,6 +18,7 @@
 
 #include "Config.h"
 #include "impl/Functional.h"
+#include "impl/Assert.h"
 #include "impl/Compatibility.h"
 #include <string>
 #include <memory>
@@ -53,14 +54,14 @@ public:
     StackContext(const std::string& tag, Coroutine coroutine, size_t stackSize = defaultStackSize());
     StackContext(const std::string& tag, size_t stackSize = defaultStackSize());
     ~StackContext();
-    
+
     StackContext(StackContext&& other);
     StackContext& operator=(StackContext&& other);
 
     operator bool();
 
     const char* tag();
-    
+
     bool isRunning();
     void start(Coroutine coroutine);
 
@@ -74,15 +75,15 @@ public:
 
 private:
     static size_t sDefaultStackSize;
-    
+
     static void contextFunc(intptr_t data);
-    
+
     StackContext();
     StackContext(const StackContext& other);
     StackContext& operator=(const StackContext& other);
 
     void* implYieldTo(StackContext *resumeContext, YieldType type, void *value);
-    
+
     struct Impl;
     std::unique_ptr<Impl> mImpl;
 
@@ -140,22 +141,24 @@ void* yieldExceptionTo(StackContext *resumeContext, const T& e)
 // misc
 //
 
-class InterruptedException : public std::runtime_error
+class YieldForbidden
 {
 public:
-    InterruptedException()
-        : std::runtime_error("InterruptedException") { }
-
-    explicit InterruptedException(const std::string& what)
-        : std::runtime_error("InterruptedException - " + what) { }
+    static std::exception_ptr ptr();
 };
 
-inline void interruptContext(StackContext *context)
+class ForcedUnwind
+{
+public:
+    static std::exception_ptr ptr();
+};
+
+inline void forceUnwind(StackContext *context)
 {
     try {
-        ut::yieldExceptionTo(context, ut::InterruptedException());
-    } catch (const ut::InterruptedException&) {
-        // exception may loop back
+        yieldExceptionTo(context, ForcedUnwind::ptr());
+    } catch (...) {
+        ut_assert_(false && "stack context may not throw on ForcedUnwind");
     }
 }
 

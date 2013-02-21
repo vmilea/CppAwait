@@ -50,7 +50,7 @@ public:
     {
         if (mCurrentValue != YC_DONE) {
             ut_assert_(mContext.isRunning());
-            interruptContext(&mContext);
+            forceUnwind(&mContext);
         }
     }
 
@@ -115,7 +115,7 @@ public:
                     ut_assert_(value != nullptr && "you may not yield nullptr from coroutine");
                     mContainer->mCurrentValue = value;
                 }
-            } catch (const InterruptedException&) { // coroutine interrupted, swallow exception
+            } catch (const ForcedUnwind&) { // coroutine interrupted, swallow exception
                 mContainer->mCurrentValue = YC_DONE;
                 mContainer = nullptr;
             } catch (...) { // propagate other exceptions thrown by coroutine

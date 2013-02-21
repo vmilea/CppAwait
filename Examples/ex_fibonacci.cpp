@@ -56,7 +56,7 @@ void ex_fibonacci()
 
         // Terminate context via exception. You could also yield a flag
         // that coroutine checks to see if it should quit.
-        ut::interruptContext(fiboSC);
+        ut::forceUnwind(fiboSC);
 
         delete fiboSC;
     }
