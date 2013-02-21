@@ -21,4 +21,5 @@
 #include "Log.h"
 #include "Foreach.h"
 #include "StringUtil.h"
+#include "CompletionGuard.h"
 #include "Compatibility.h"

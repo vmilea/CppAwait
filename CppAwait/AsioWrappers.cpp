@@ -38,22 +38,14 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     awt->await();
 
     // connect
-    for (tcp::resolver::iterator it = itEndpoints, end = tcp::resolver::iterator(); it != end; ++it) {
-        tcp::endpoint ep = *it;
-        awt = asyncConnect(socket, ep);
-            
-        try {
-            awt->await(); // connected!
-            break;
-        } catch (...) {
-            // try next endpoint
-        }
-    }
+    tcp::resolver::iterator itConnected;
+    awt = asyncConnect(socket, itEndpoints, itConnected);
+    awt->await();
 
     if (!socket.is_open()) {
         throw std::runtime_error("failed to connect socket");
     }
-    
+
     streambuf request;
     size_t numBytesTransferred;
 
@@ -105,7 +97,10 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
 
 AwaitableHandle asyncHttpDownload(const std::string& host, const std::string& path, asio::streambuf& outResponse)
 {
-    return startAsync("asyncHttpDownload", [host, path, &outResponse](Awaitable * /* awtSelf */) {
+    static int id = 0;
+    auto tag = string_printf("asyncHttpDownload-%d", id++);
+
+    return startAsync(tag, [host, path, &outResponse](Awaitable * /* awtSelf */) {
         tcp::socket socket(io());
         
         size_t contentLength;
