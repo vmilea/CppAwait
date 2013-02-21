@@ -47,10 +47,10 @@ void implLog(LogLevel logLevel, const char *format, ...);
 
 // #define ut_log_error_(_format, ...) ut::implLog(ut::LOGLEVEL_ERROR, UT_LOG_WHERE_FORMAT _format, UT_LOG_WHERE_ARGS, __VA_ARGS__)
 
-#define ut_log_warn_(_format, ...) ut::implLog(ut::LOGLEVEL_WARN, _format, __VA_ARGS__)
+#define ut_log_warn_(_format, ...) ut::implLog(ut::LOGLEVEL_WARN, _format, ##__VA_ARGS__)
 
-#define ut_log_info_(_format, ...) ut::implLog(ut::LOGLEVEL_INFO, _format, __VA_ARGS__)
+#define ut_log_info_(_format, ...) ut::implLog(ut::LOGLEVEL_INFO, _format, ##__VA_ARGS__)
 
-#define ut_log_debug_(_format, ...) ut::implLog(ut::LOGLEVEL_DEBUG, _format, __VA_ARGS__)
+#define ut_log_debug_(_format, ...) ut::implLog(ut::LOGLEVEL_DEBUG, _format, ##__VA_ARGS__)
 
-#define ut_log_verbose_(_format, ...) ut::implLog(ut::LOGLEVEL_VERBOSE, _format, __VA_ARGS__)
+#define ut_log_verbose_(_format, ...) ut::implLog(ut::LOGLEVEL_VERBOSE, _format, ##__VA_ARGS__)

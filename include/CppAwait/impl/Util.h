@@ -21,3 +21,4 @@
 #include "Log.h"
 #include "Foreach.h"
 #include "StringUtil.h"
+#include "Compatibility.h"

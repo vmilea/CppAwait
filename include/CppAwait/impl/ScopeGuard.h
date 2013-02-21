@@ -56,6 +56,8 @@ public:
         return mIsDismissed;
     }
 
+    void touch() const  { /* avoids "variable unused" compiler warnings */ }
+
     ScopeGuard(const type& other); // delete
     type& operator=(const type& other); // delete
     
@@ -79,7 +81,8 @@ ScopeGuard<T> makeScopeGuard(T cleanup)
 //
 
 #define ut_scope_guard_(cleanup) \
-    const auto& ut_anonymous_variable_(scopeGuard) = ut::makeScopeGuard(cleanup)
+    const auto& ut_anonymous_variable_(scopeGuard) = ut::makeScopeGuard(cleanup); \
+    ut_anonymous_variable_(scopeGuard).touch()
 
 #define ut_named_scope_guard_(name, cleanup) \
     const auto& name = ut::makeScopeGuard(cleanup)

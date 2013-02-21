@@ -28,6 +28,12 @@
 # endif
 #endif
 
+// regular MINGW doesn't implement chrono & thread, fallback to Boost
+//
+#ifdef __MINGW32__
+# undef UT_HAVE_STD_THREAD
+#endif
+
 #ifdef UT_HAVE_STD_THREAD
 
 #include <chrono>
