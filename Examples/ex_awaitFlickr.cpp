@@ -15,7 +15,7 @@
 */
 
 #include "ExUtil.h"
-#include "Looper/Looper.h"
+#include "AsioScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <fstream>
@@ -144,7 +144,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
             int totalPicsRemaining = numPics;
             int page = 1;
 
-            DownloadSlots slots;
+            DownloadSlots dlslots;
             int numSlotsUsed = 0;
 
             auto startFetch = [&](DownloadSlots::iterator pos, FlickrPhoto& photo) {
@@ -179,7 +179,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
                 auto itPagePhotos = resp.photos.begin();
 
                 // download page photos in parallel (up to MAX_PARALLEL_DOWNLOADS)
-                for (auto it = slots.begin(); it != slots.end(); ++it) {
+                for (auto it = dlslots.begin(); it != dlslots.end(); ++it) {
                     if (itPagePhotos == resp.photos.end() || totalPicsRemaining == 0) {
                         break;
                     }
@@ -188,7 +188,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
 
                 // advance as slots gets freed
                 while (numSlotsUsed > 0) {
-                    DownloadSlots::iterator pos = ut::awaitAny(slots);
+                    DownloadSlots::iterator pos = ut::awaitAny(dlslots);
                     pos->awaitable->await(); // won't yield again, just check for exception
                     
                     std::string savePath = pos->photo->id + ".jpg";
@@ -208,35 +208,18 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
 
                 page++;
             }
-        } catch (std::exception& e) {
-            // exceptions get propagated into awaiting context
-
-            printf ("Download failed: %s\n", e.what());
+        } catch (std::exception& e) { // exceptions get propagated into awaiting context
+            printf ("Download failed: %s - %s\n", typeid(e).name(), e.what());
+        } catch (...) {
+            printf ("Download failed: unknown exception\n");
         }
-
-        ut::schedule([]() {
-            loo::mainLooper().quit();
-        });
     }, 256 * 1024); // need stack > 64KB
 }
 
 void ex_awaitFlickr()
 {
-    ut::initMainContext();
-
-    // use a custom run loop
-    loo::Looper mainLooper("main");
-    loo::setMainLooper(mainLooper);
-
-    // dispatch boost::asio ready handlers
-    mainLooper.scheduleRepeating([]() -> bool {
-        if (ut::asio::io().stopped()) {
-            ut::asio::io().reset();
-        }
-        ut::asio::io().poll();
-
-        return true;
-    });
+    // setup a scheduler on top of Boost.Asio io_service
+    ut::initScheduler(&asioScheduleDelayed, &asioCancelScheduled);
 
     printf ("tags (default 'kitten'): ");
     std::string tags = readLine();
@@ -252,5 +235,6 @@ void ex_awaitFlickr()
 
     ut::AwaitableHandle awt = asyncFlickrDownload(splitTags, 25, 10);
 
-    mainLooper.run();
+    // blocks until all async handlers have ben dispatched
+    ut::asio::io().run();
 }

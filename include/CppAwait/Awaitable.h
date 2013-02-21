@@ -23,7 +23,7 @@
 #include <cstdarg>
 #include <string>
 #include <memory>
-#include <exception>
+#include <stdexcept>
 #include <functional>
 #include <vector>
 #include <array>
@@ -32,17 +32,35 @@ namespace ut {
 
 //
 // scheduling hooks, for integration with whatever
-// main loop you're using (Qt/GLib/MFC/custom ...)
+// main loop you're using (Qt / GLib / MFC / Asio ...)
 //
 
+// Unique ID for a scheduled action. May be used to cancel the action.
+//
 typedef int Ticket;
 
-Ticket scheduleDelayed(long delay, Runnable runnable);
+// Schedule an action to execute after delay milliseconds.
+//
+// Note: schedule(0, a), schedule(0, b) implies b cannot run before a.
+//
+typedef Ticket (*ScheduleDelayedFunc)(long delay, Runnable runnable);
 
-inline Ticket schedule(Runnable runnable)
-{
-    return scheduleDelayed(0, std::move(runnable));
-}
+// Cancel action associated with ticket. Returns false if action
+// has already executed or if ticket invalid.
+//
+typedef bool (*CancelScheduledFunc)(Ticket ticket);
+
+// Setup scheduling hooks, this must be done before using Awaitable.
+//
+void initScheduler(ScheduleDelayedFunc schedule, CancelScheduledFunc cancel);
+
+//
+// generic scheduling interface
+//
+
+Ticket schedule(Runnable runnable);
+
+Ticket scheduleDelayed(long delay, Runnable runnable);
 
 bool cancelScheduled(Ticket ticket);
 
@@ -65,13 +83,13 @@ public:
     void await();
 
     bool didComplete();
-    
+
     bool didFail();
-    
+
     bool isDone();
 
     void setOnDoneHandler(OnDoneHandler handler);
-    
+
     const char* tag();
 
     void setTag(const std::string& tag);
@@ -99,13 +117,13 @@ protected:
     bool mDidComplete;
     std::exception_ptr mExceptionPtr;
     OnDoneHandler mDoneHandler;
-    
+
     void *mUserData;
     Runnable mUserDataDeleter;
 
     template <typename Collection>
     friend typename Collection::iterator awaitAny(Collection& awaitables);
-    
+
     friend AwaitableHandle startAsync(const std::string& tag, AsyncFunc func, size_t stackSize);
 };
 
@@ -195,23 +213,23 @@ typename Collection::iterator awaitAny(Collection& awaitables)
     }
 
     yieldTo(mainContext());
-    
+
     typename Collection::iterator completedPos;
     Awaitable *completedAwt = nullptr;
-    
+
     for (auto it = awaitables.begin(); it != awaitables.end(); ++it) {
         Awaitable *awt = selectAwaitable(*it);
         if (awt == nullptr) {
             continue;
         }
         awt->mAwaitingContext = nullptr;
-        
+
         if (completedAwt == nullptr && awt->isDone()) {
             completedAwt = awt;
             completedPos = it;
         }
     }
-    
+
     ut_assert_(completedAwt != nullptr);
     ut_assert_(completedAwt->isDone());
 

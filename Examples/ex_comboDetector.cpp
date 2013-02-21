@@ -94,8 +94,6 @@ static void coComboDetector(void *startValue)
 
 void ex_comboDetector()
 {
-    ut::initMainContext();
-
     auto detectorSC = new ut::StackContext("combo-detector", &coComboDetector);
 
     foreach_(char chr, BUTTON_MASH) {

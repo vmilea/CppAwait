@@ -15,6 +15,7 @@
 */
 
 #include "ExUtil.h"
+#include "LooScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <Looper/Looper.h>
 #include <random>
@@ -157,11 +158,11 @@ static ut::AwaitableHandle asyncThread()
 
 void ex_awaitThread()
 {
-    ut::initMainContext();
-
     // use a custom run loop
     loo::Looper mainLooper("main");
     loo::setMainLooper(mainLooper);
+
+    ut::initScheduler(&looScheduleDelayed, &looCancelScheduled);
 
     ut::AwaitableHandle awt = asyncThread();
 

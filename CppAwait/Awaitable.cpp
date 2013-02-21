@@ -23,6 +23,34 @@
 namespace ut {
 
 //
+// scheduler
+//
+
+static ScheduleDelayedFunc sScheduleDelayed = nullptr;
+static CancelScheduledFunc sCancelScheduled = nullptr;
+
+void initScheduler(ScheduleDelayedFunc schedule, CancelScheduledFunc cancel)
+{
+    sScheduleDelayed = schedule;
+    sCancelScheduled = cancel;
+}
+
+Ticket schedule(Runnable runnable)
+{
+    return sScheduleDelayed(0, std::move(runnable));
+}
+
+Ticket scheduleDelayed(long delay, Runnable runnable)
+{
+    return sScheduleDelayed(delay, std::move(runnable));
+}
+
+bool cancelScheduled(Ticket ticket)
+{
+    return sCancelScheduled(ticket);
+}
+
+//
 // Awaitable
 //
 

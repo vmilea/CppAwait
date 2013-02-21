@@ -19,7 +19,7 @@
 #include <CppAwait/impl/Util.h>
 #include <map>
 #include <algorithm>
-#include <cstdio>
+#include <boost/version.hpp>
 #include <boost/context/all.hpp>
 
 // guarded stack allocator has moved to boost/coroutine since Boost 1.53
@@ -29,11 +29,47 @@
 #endif
 
 namespace ut {
-    
+
 namespace ctx = boost::context;
 
 static StackContext *sMainContext = nullptr;
 static StackContext *sCurrentContext = nullptr;
+
+
+//
+// main/current context
+//
+
+void initMainContext()
+{
+    // must be called from main stack
+
+    if (sMainContext != nullptr) {
+        return;
+    }
+
+    sMainContext = new StackContext();
+    sCurrentContext = sMainContext;
+}
+
+StackContext* mainContext()
+{
+    if (sCurrentContext == nullptr) {
+        initMainContext();
+    }
+
+    return sMainContext;
+}
+
+StackContext* currentContext()
+{
+    if (sCurrentContext == nullptr) {
+        initMainContext();
+    }
+
+    return sCurrentContext;
+}
+
 
 // types
 
@@ -45,6 +81,7 @@ struct YieldValue
     YieldValue(YieldType type, void *value)
         : type(type), value(value) { }
 };
+
 
 //
 // StackPool
@@ -58,14 +95,18 @@ public:
     std::pair<void*, size_t> obtain(size_t minStackSize)
     {
         // take smallest stack that fits requirement. create one if no match.
-        
+
         void *stackPtr;
         size_t stackSize;
-                        
+
         StackMap::iterator pos = mStacks.lower_bound(minStackSize);
 
         if (pos == mStacks.end()) {
-            stackSize = std::max(minStackSize, StackContext::minimumStackSize());
+            stackSize = StackContext::minimumStackSize();
+            if (stackSize < minStackSize) {
+                stackSize = minStackSize;
+            }
+
             stackPtr = mAllocator.allocate(stackSize);
         } else {
             stackSize = pos->first;
@@ -84,7 +125,7 @@ public:
 
         mStacks.insert(std::make_pair(stackSize, stackPtr));
     }
-    
+
     void drain()
     {
         ut_foreach_(auto& pair, mStacks) {
@@ -168,7 +209,7 @@ struct StackContext::Impl
     bool isRunning;
     bool isUnwinded;
     Runnable postRunAction;
-    
+
     Impl(const std::string& tag, const std::pair<void *, size_t>& stack)
         : tag(tag)
         , stack(stack)
@@ -261,10 +302,10 @@ void StackContext::start(Coroutine coroutine)
     mImpl->parent = currentContext();
     mImpl->coroutine = std::move(coroutine);
     mImpl->fc = ctx::make_fcontext(mImpl->stack.first, mImpl->stack.second, &StackContext::contextFunc);
-    
+
     mImpl->isRunning = true;
     mImpl->isUnwinded = false;
-    
+
     currentContext()->implYieldTo(this, YT_RESULT, this);
 }
 
@@ -298,7 +339,7 @@ void* StackContext::implYieldTo(StackContext *resumeContext, YieldType type, voi
     ut_assert_(resumeContext != nullptr);
     ut_assert_(resumeContext != this);
     ut_assert_(!(resumeContext->mImpl->isUnwinded));
-    
+
     sCurrentContext = resumeContext;
 
     YieldValue ySent(type, value);
@@ -336,20 +377,20 @@ void StackContext::contextFunc(intptr_t data)
     std::exception_ptr *peptr = nullptr;
     try {
         void *value = context->implYieldTo(context->parent(), YT_RESULT, nullptr);
-        
+
         ut_log_debug_("- context '%s' starts running", context->tag());
         context->mImpl->coroutine(value);
         ut_log_debug_("- context '%s' done running", context->tag());
-    
+
     } catch (...) {
         ut_log_debug_("- context '%s' terminated with exception", context->tag());
-        
+
         // [MSVC] may not yield from catch block
         peptr = new std::exception_ptr(std::current_exception());
     }
 
     context->mImpl->isRunning = false;
-    
+
     if (peptr != nullptr) {
         // Yielding an exception is trickier because we need to get back here
         // in order to delete the exception_ptr. To make this work the context
@@ -374,32 +415,6 @@ void StackContext::contextFunc(intptr_t data)
     } catch (...) {
         ut_assert_(false && "post run exception");
     }
-}
-
-//
-// main/current context
-//
-
-void initMainContext()
-{
-    ut_assert_(sMainContext == nullptr);
-
-    sMainContext = new StackContext();
-    sCurrentContext = sMainContext;
-}
-
-StackContext* mainContext()
-{
-    ut_assert_(sMainContext != nullptr);
-
-    return sMainContext;
-}
-
-StackContext* currentContext()
-{
-    ut_assert_(sCurrentContext != nullptr);
-
-    return sCurrentContext;
 }
 
 }

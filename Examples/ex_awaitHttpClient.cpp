@@ -15,7 +15,7 @@
 */
 
 #include "ExUtil.h"
-#include "Looper/Looper.h"
+#include "LooScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <fstream>
@@ -154,13 +154,16 @@ static ut::AwaitableHandle asyncHttpDownload(const std::string& host, const std:
 
 void ex_awaitHttpClient()
 {
-    ut::initMainContext();
-
     // use a custom run loop
     loo::Looper mainLooper("main");
     loo::setMainLooper(mainLooper);
 
-    // dispatch boost::asio ready handlers
+    ut::initScheduler(&looScheduleDelayed, &looCancelScheduled);
+
+    // Dispatch Boost.Asio ready handlers every 5ms. This is a simple way to integrate 
+    // Asio into your GUI without hogging CPU. Having Asio drive the run loop instead
+    // may give better performance (see Flickr example).
+    //
     mainLooper.scheduleRepeating([]() -> bool {
         if (ut::asio::io().stopped()) {
             ut::asio::io().reset();
@@ -168,7 +171,7 @@ void ex_awaitHttpClient()
         ut::asio::io().poll();
 
         return true;
-    });
+    }, 0, 5);
     
     ut::AwaitableHandle awt = asyncHttpDownload("www.google.com", "/images/srpr/logo3w.png", "download.png");
 

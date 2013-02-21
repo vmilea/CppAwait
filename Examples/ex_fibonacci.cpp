@@ -42,9 +42,6 @@ static void coFiboGenerator(void *startValue)
 
 void ex_fibonacci()
 {
-    // initialize on main stack
-    ut::initMainContext();
-
     {
         auto fiboSC = new ut::StackContext("fibo-generator", &coFiboGenerator);
 

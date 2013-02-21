@@ -15,6 +15,7 @@
 */
 
 #include "ExUtil.h"
+#include "LooScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <Looper/Looper.h>
 #include <array>
@@ -43,7 +44,7 @@ static ut::AwaitableHandle asyncMySimpleDelay(long delay)
     });
 
     // awaitables can be tagged to ease debugging
-    awt->setTag("my-simple-delay");
+    awt->setTag(ut::string_printf("my-simple-delay-%ld", delay));
 
     return ut::AwaitableHandle(awt);
 }
@@ -100,16 +101,15 @@ static ut::AwaitableHandle asyncTest()
 
 void ex_awaitBasics()
 {
-    // initialize on main stack
-    ut::initMainContext();
-
     // Your application needs a run loop, otherwise there's no way to awake from await.
     // CppAwait has two hooks -- scheduleDelayed() and cancelScheduled() -- that must
-    // be implemented using your API of choice (Qt/GLib/MFC/...).
+    // be implemented using your API of choice (Qt / GLib / MFC / Asio ...).
     // 
     // here we just use a custom run loop
     loo::Looper mainLooper("main");
     loo::setMainLooper(mainLooper);
+
+    ut::initScheduler(&looScheduleDelayed, &looCancelScheduled);
 
     // print every 100ms to show main loop is not blocked
     mainLooper.scheduleRepeating([]() -> bool {
