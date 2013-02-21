@@ -18,6 +18,7 @@
 
 #include "Config.h"
 #include "impl/Functional.h"
+#include "impl/Compatibility.h"
 #include <string>
 #include <memory>
 #include <stdexcept>

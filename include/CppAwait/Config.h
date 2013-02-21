@@ -28,13 +28,13 @@
 
 ///
 
-#ifdef _MSC_VER
-
 #define ut_concatenate_(s1, s2)          s1##s2
 #define ut_concatenate_indirect_(s1, s2) ut_concatenate_(s1, s2)
 #define ut_anonymous_variable_(str)      ut_concatenate_indirect_(str, __LINE__)
 
-//
+///
+
+#ifdef _MSC_VER
 
 #define ut_multi_line_macro_begin_ \
     do { \
@@ -62,31 +62,10 @@
 # endif
 #endif
 
-//
+///
 
 #ifdef __cplusplus
 
 #include <boost/cstdint.hpp>
-#include <exception>
-
-namespace ut {
-
-// VC++ 2010 workaround -- no make_exception_ptr()
-//
-template <typename T>
-std::exception_ptr make_exception_ptr(const T& e)
-{
-    try {
-        throw e;
-    } catch(...) {
-        return std::current_exception();
-    }
-}
-
-// VC++ 2010 workaround -- no declval()
-//
-template <typename T> T&& declval();
-
-}
 
 #endif // __cplusplus
