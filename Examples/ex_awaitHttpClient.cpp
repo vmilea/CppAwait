@@ -29,17 +29,17 @@
 using namespace boost::asio;
 using namespace boost::asio::ip;
 
-void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, streambuf& outResponse, size_t& outContentLength)
+static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse, size_t& outContentLength)
 {
     ut::AwaitableHandle awt;
-        
+
     tcp::resolver resolver(ut::asio::io());
     tcp::resolver::query query(host, "http");
-    
+
     // DNS resolve
     tcp::resolver::iterator itEndpoints;
     awt = ut::asio::asyncResolve(resolver, query, itEndpoints);
-    
+
     printf ("resolving %s ...\n", host.c_str());
     awt->await();
 
@@ -47,7 +47,7 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     for (tcp::resolver::iterator it = itEndpoints, end = tcp::resolver::iterator(); it != end; ++it) {
         tcp::endpoint ep = *it;
         awt = ut::asio::asyncConnect(socket, ep);
-        
+
         printf ("attempting connect to %s ...\n", ep.address().to_string().c_str());
         try {
             awt->await(); // connected!
@@ -61,25 +61,24 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     }
 
     printf ("connected!\n");
-    
-    streambuf request;
-    size_t numBytesTransferred;
-            
+
+    auto request = std::make_shared<streambuf>();
+
     // write HTTP request
-    std::ostream requestStream(&request);
+    std::ostream requestStream(request.get());
     requestStream << "GET " << path << " HTTP/1.0\r\n";
     requestStream << "Host: " << host << "\r\n";
     requestStream << "Accept: */*\r\n";
     requestStream << "Connection: close\r\n\r\n";
 
-    awt = ut::asio::asyncWrite(socket, request, numBytesTransferred);
+    awt = ut::asio::asyncWrite(socket, request);
     awt->await();
 
     // read first response line
-    awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n"), numBytesTransferred);
+    awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n"));
     awt->await();
 
-    std::istream responseStream(&outResponse);
+    std::istream responseStream(outResponse.get());
     std::string httpVersion;
     responseStream >> httpVersion;
     int statusCode;
@@ -95,7 +94,7 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     }
 
     // read response headers
-    awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n\r\n"), numBytesTransferred);
+    awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n\r\n"));
     awt->await();
 
     // process headers
@@ -103,14 +102,14 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     outContentLength = 0;
 
     printf ("headers:\n");
-    
+
     while (std::getline(responseStream, header)) {
         if (boost::starts_with(header, "Content-Length: ")) {
             auto l = header.substr(strlen("Content-Length: "));
             l.resize(l.size() - 1);
             outContentLength = boost::lexical_cast<size_t>(l);
         }
-        
+
         printf ("  %s\n", header.c_str());
 
         if (header == "\r") {
@@ -123,23 +122,23 @@ static ut::AwaitableHandle asyncHttpDownload(const std::string& host, const std:
 {
     return ut::startAsync("asyncHttpDownload", [host, path, savePath](ut::Awaitable * /* awtSelf */) {
         tcp::socket socket(ut::asio::io());
-        streambuf response;
+        auto response = std::make_shared<streambuf>();
         size_t contentLength;
         size_t numBytesTransferred;
-        
+
         try {
             // read header. it's fine to yield from inner function
             doAsyncHttpGetHeader(socket, host, path, response, contentLength);
 
             // transfer remaining content
-            ut::AwaitableHandle awt = ut::asio::asyncRead(socket, response, transfer_exactly(contentLength - response.size()), numBytesTransferred);
+            ut::AwaitableHandle awt = ut::asio::asyncRead(socket, response, transfer_exactly(contentLength - response->size()), numBytesTransferred);
             awt->await();
 
-            printf("saving %ld bytes to file '%s' ...\n", (long) response.size(), savePath.c_str());
+            printf("saving %ld bytes to file '%s' ...\n", (long) response->size(), savePath.c_str());
 
             // TODO: file I/O should also be async
             std::ofstream fout(savePath.c_str(), std::ios::out | std::ios::binary);
-            fout << &response;
+            fout << response.get();
         } catch (std::exception& e) {
             // exceptions get propagated into awaiting context
 
@@ -160,7 +159,7 @@ void ex_awaitHttpClient()
 
     ut::initScheduler(&looScheduleDelayed, &looCancelScheduled);
 
-    // Dispatch Boost.Asio ready handlers every 5ms. This is a simple way to integrate 
+    // Dispatch Boost.Asio ready handlers every 5ms. This is a simple way to integrate
     // Asio into your GUI without hogging CPU. Having Asio drive the run loop instead
     // may give better performance (see Flickr example).
     //
@@ -172,7 +171,7 @@ void ex_awaitHttpClient()
 
         return true;
     }, 0, 5);
-    
+
     ut::AwaitableHandle awt = asyncHttpDownload("www.google.com", "/images/srpr/logo3w.png", "download.png");
 
     mainLooper.run();

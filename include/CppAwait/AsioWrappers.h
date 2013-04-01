@@ -19,9 +19,19 @@
 #include "Config.h"
 #include "Awaitable.h"
 #include "impl/CompletionGuard.h"
+#include "impl/OpaqueSharedPtr.h"
 #include <boost/asio.hpp>
 
-// experimental boost ASIO wrappers
+// experimental Boost.Asio wrappers
+
+// note: Asio requires some arguments to be valid until callback. This complicates cancellation:
+//       sockets / buffers must be kept alive after calling socket.close() until the callbacks
+//       have run on io_service.
+//       For an interrupted Awaitable, it means the callback may run after its stack context
+//       has been unwinded. Workaround: shared_ptr abuse.
+//
+// TODO: - check if Asio supports some kind of instant cancellation
+//       - consider delaying unwind until callback
 
 namespace ut { namespace asio {
 
@@ -30,6 +40,7 @@ inline boost::asio::io_service& io()
     static boost::asio::io_service io;
     return io;
 }
+
 
 template <typename Resolver>
 AwaitableHandle asyncResolve(Resolver& resolver, const typename Resolver::query& query, typename Resolver::iterator& outEndpoints)
@@ -48,7 +59,7 @@ AwaitableHandle asyncResolve(Resolver& resolver, const typename Resolver::query&
 
             outEndpoints = it;
 
-            if (ec.value() == 0) {
+            if (!ec) {
                 yieldTo(context);
             } else {
                 yieldExceptionTo(context, boost::system::system_error(ec));
@@ -58,6 +69,7 @@ AwaitableHandle asyncResolve(Resolver& resolver, const typename Resolver::query&
         yield();
     });
 }
+
 
 template <typename Socket>
 AwaitableHandle asyncConnect(Socket& socket, const typename Socket::endpoint_type& endpoint)
@@ -72,7 +84,7 @@ AwaitableHandle asyncConnect(Socket& socket, const typename Socket::endpoint_typ
                 return;
             }
 
-            if (ec.value() == 0) {
+            if (!ec) {
                 yieldTo(context);
             } else {
                 yieldExceptionTo(context, boost::system::system_error(ec));
@@ -82,6 +94,7 @@ AwaitableHandle asyncConnect(Socket& socket, const typename Socket::endpoint_typ
         yield();
     });
 }
+
 
 template <typename Socket, typename Iterator>
 AwaitableHandle asyncConnect(Socket& socket, Iterator begin, Iterator& outConnected)
@@ -98,7 +111,7 @@ AwaitableHandle asyncConnect(Socket& socket, Iterator begin, Iterator& outConnec
 
             outConnected = iterator;
 
-            if (ec.value() == 0) {
+            if (!ec) {
                 yieldTo(context);
             } else {
                 yieldExceptionTo(context, boost::system::system_error(ec));
@@ -109,22 +122,72 @@ AwaitableHandle asyncConnect(Socket& socket, Iterator begin, Iterator& outConnec
     });
 }
 
-template <typename AsyncWriteStream, typename ConstBuffer>
-AwaitableHandle asyncWrite(AsyncWriteStream& stream, ConstBuffer& buffer, std::size_t& outBytesTransferred)
+
+template <typename Acceptor, typename PeerSocket>
+AwaitableHandle asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer)
 {
-    return startAsync("asyncWrite", [&stream, &buffer, &outBytesTransferred](Awaitable * /* awtSelf */) {
+    return startAsync("asyncAccept", [&acceptor, peer](Awaitable * /* awtSelf */) {
         StackContext *context = currentContext();
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_write(stream, buffer, [&, guardToken](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        acceptor.async_accept(*peer, [&, guardToken, peer](const boost::system::error_code& ec) {
+            if (guardToken->isBlocked()) {
+                return;
+            }
+
+            if (!ec) {
+                yieldTo(context);
+            } else {
+                yieldExceptionTo(context, boost::system::system_error(ec));
+            }
+        });
+
+        yield();
+    });
+}
+
+template <typename Acceptor, typename PeerSocket>
+AwaitableHandle asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer, std::shared_ptr<typename Acceptor::endpoint_type>& peerEndpoint)
+{
+    return startAsync("asyncAccept", [&acceptor, peer, peerEndpoint](Awaitable * /* awtSelf */) {
+        StackContext *context = currentContext();
+        CompletionGuard guard;
+        auto guardToken = guard.getToken();
+
+        acceptor.async_accept(*peer, *peerEndpoint, [&, guardToken, peer, peerEndpoint](const boost::system::error_code& ec) {
+            if (guardToken->isBlocked()) {
+                return;
+            }
+
+            if (!ec) {
+                yieldTo(context);
+            } else {
+                yieldExceptionTo(context, boost::system::system_error(ec));
+            }
+        });
+
+        yield();
+    });
+}
+
+
+template <typename AsyncWriteStream, typename ConstBufferSequence, typename CompletionCondition>
+AwaitableHandle asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence& buffers, OpaqueSharedPtr masterBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+{
+    return startAsync("asyncWrite", [&stream, buffers, masterBuffer, completionCondition, &outBytesTransferred](Awaitable * /* awtSelf */) {
+        StackContext *context = currentContext();
+        CompletionGuard guard;
+        auto guardToken = guard.getToken();
+
+        boost::asio::async_write(stream, buffers, completionCondition, [&, guardToken, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
 
             outBytesTransferred = bytesTransferred;
 
-            if (ec.value() == 0) {
+            if (!ec) {
                 yieldTo(context);
             } else {
                 yieldExceptionTo(context, boost::system::system_error(ec));
@@ -135,22 +198,36 @@ AwaitableHandle asyncWrite(AsyncWriteStream& stream, ConstBuffer& buffer, std::s
     });
 }
 
-template <typename AsyncReadStream, typename MutableBuffer>
-AwaitableHandle asyncRead(AsyncReadStream& stream, MutableBuffer& outBuffer, std::size_t& outBytesTransferred)
+template <typename AsyncWriteStream, typename ConstBufferSequence>
+AwaitableHandle asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence& buffers, OpaqueSharedPtr masterBuffer)
 {
-    return startAsync("asyncRead", [&stream, &outBuffer, &outBytesTransferred](Awaitable * /* awtSelf */) {
+    static size_t bytesTransferred;
+    return asyncWrite(stream, buffers, std::move(masterBuffer), boost::asio::transfer_all(), bytesTransferred);
+}
+
+template <typename AsyncWriteStream, typename Buffer>
+AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<Buffer> buffer)
+{
+    return asyncWrite(stream, boost::asio::buffer(*buffer), OpaqueSharedPtr(buffer));
+}
+
+
+template <typename AsyncWriteStream, typename Allocator, typename CompletionCondition>
+AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > buffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+{
+    return startAsync("asyncWrite", [&stream, buffer, completionCondition, &outBytesTransferred](Awaitable * /* awtSelf */) {
         StackContext *context = currentContext();
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_read(stream, outBuffer, [&, guardToken](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        boost::asio::async_write(stream, *buffer, completionCondition, [&, guardToken, buffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
 
             outBytesTransferred = bytesTransferred;
 
-            if (ec.value() == 0) {
+            if (!ec) {
                 yieldTo(context);
             } else {
                 yieldExceptionTo(context, boost::system::system_error(ec));
@@ -161,22 +238,30 @@ AwaitableHandle asyncRead(AsyncReadStream& stream, MutableBuffer& outBuffer, std
     });
 }
 
-template <typename AsyncReadStream, typename MutableBuffer, typename CompletionCondition>
-AwaitableHandle asyncRead(AsyncReadStream& stream, MutableBuffer& outBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+template <typename AsyncWriteStream, typename Allocator>
+AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > buffer)
 {
-    return startAsync("asyncRead", [&stream, &outBuffer, completionCondition, &outBytesTransferred](Awaitable * /* awtSelf */) {
+    static size_t bytesTransferred;
+    return asyncWrite(stream, std::move(buffer), boost::asio::transfer_all(), bytesTransferred);
+}
+
+
+template <typename AsyncReadStream, typename MutableBufferSequence, typename CompletionCondition>
+AwaitableHandle asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffers, OpaqueSharedPtr masterBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+{
+    return startAsync("asyncRead", [&stream, outBuffers, masterBuffer, completionCondition, &outBytesTransferred](Awaitable * /* awtSelf */) {
         StackContext *context = currentContext();
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_read(stream, outBuffer, completionCondition, [&, guardToken](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        boost::asio::async_read(stream, outBuffers, completionCondition, [&, guardToken, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
 
             outBytesTransferred = bytesTransferred;
 
-            if (ec.value() == 0) {
+            if (!ec) {
                 yieldTo(context);
             } else {
                 yieldExceptionTo(context, boost::system::system_error(ec));
@@ -187,22 +272,36 @@ AwaitableHandle asyncRead(AsyncReadStream& stream, MutableBuffer& outBuffer, Com
     });
 }
 
-template <typename AsyncReadStream, typename MutableBuffer, typename MatchCondition>
-AwaitableHandle asyncReadUntil(AsyncReadStream& stream, MutableBuffer& outBuffer, const MatchCondition& matchCondition, std::size_t& outBytesTransferred)
+template <typename AsyncReadStream, typename MutableBufferSequence>
+AwaitableHandle asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffer, OpaqueSharedPtr masterBuffer)
 {
-    return startAsync("asyncReadUntil", [&stream, &outBuffer, matchCondition, &outBytesTransferred](Awaitable * /* awtSelf */) {
+    static size_t bytesTransferred;
+    return asyncRead(stream, outBuffer, std::move(masterBuffer), boost::asio::transfer_all(), bytesTransferred);
+}
+
+template <typename AsyncReadStream, typename Buffer>
+AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<Buffer> buffer)
+{
+    return asyncRead(stream, boost::asio::buffer(*buffer), OpaqueSharedPtr(buffer));
+}
+
+
+template <typename AsyncReadStream, typename Allocator, typename CompletionCondition>
+AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+{
+    return startAsync("asyncRead", [&stream, outBuffer, completionCondition, &outBytesTransferred](Awaitable * /* awtSelf */) {
         StackContext *context = currentContext();
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_read_until(stream, outBuffer, matchCondition, [&, guardToken](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        boost::asio::async_read(stream, *outBuffer, completionCondition, [&, guardToken, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
 
             outBytesTransferred = bytesTransferred;
 
-            if (ec.value() == 0) {
+            if (!ec) {
                 yieldTo(context);
             } else {
                 yieldExceptionTo(context, boost::system::system_error(ec));
@@ -213,6 +312,48 @@ AwaitableHandle asyncReadUntil(AsyncReadStream& stream, MutableBuffer& outBuffer
     });
 }
 
-AwaitableHandle asyncHttpDownload(const std::string& host, const std::string& path, boost::asio::streambuf& outResponse);
+template <typename AsyncReadStream, typename Allocator>
+AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer)
+{
+    static size_t bytesTransferred;
+    return asyncRead(stream, std::move(outBuffer), boost::asio::transfer_all(), bytesTransferred);
+}
+
+
+template <typename AsyncReadStream, typename Allocator, typename Condition>
+AwaitableHandle asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, const Condition& condition, std::size_t& outBytesTransferred)
+{
+    return startAsync("asyncReadUntil", [&stream, outBuffer, condition, &outBytesTransferred](Awaitable * /* awtSelf */) {
+        StackContext *context = currentContext();
+        CompletionGuard guard;
+        auto guardToken = guard.getToken();
+
+        boost::asio::async_read_until(stream, *outBuffer, condition, [&, guardToken, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+            if (guardToken->isBlocked()) {
+                return;
+            }
+
+            outBytesTransferred = bytesTransferred;
+
+            if (!ec) {
+                yieldTo(context);
+            } else {
+                yieldExceptionTo(context, boost::system::system_error(ec));
+            }
+        });
+
+        yield();
+    });
+}
+
+template <typename AsyncReadStream, typename Allocator, typename Condition>
+AwaitableHandle asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, const Condition& condition)
+{
+    static size_t bytesTransferred;
+    return asyncReadUntil(stream, std::move(outBuffer), condition, bytesTransferred);
+}
+
+
+AwaitableHandle asyncHttpDownload(const std::string& host, const std::string& path, std::shared_ptr<boost::asio::streambuf> outResponse);
 
 } }

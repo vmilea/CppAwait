@@ -134,8 +134,11 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
         struct DownloadSlot
         {
             ut::AwaitableHandle awaitable;
-            streambuf buf;
+            std::shared_ptr<streambuf> buf;
             FlickrPhoto *photo;
+
+            DownloadSlot()
+                : buf(std::make_shared<streambuf>()) { }
         };
 
         typedef std::array<DownloadSlot, MAX_PARALLEL_DOWNLOADS> DownloadSlots;
@@ -163,12 +166,12 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
             while (totalPicsRemaining > 0) {
                 // download a page
                 auto queryUrl = makeFlickrQueryUrl(tags, numPicsPerPage, page);
-                streambuf response;
+                auto response = std::make_shared<streambuf>();
                 ut::AwaitableHandle awt = ut::asio::asyncHttpDownload(queryUrl.first, queryUrl.second, response); 
                 awt->await();
                 
                 // parse xml
-                FlickrPhotos resp = parseFlickrResponse(response);
+                FlickrPhotos resp = parseFlickrResponse(*response);
 
                 printf ("query result: %ld photos, page %d/%d, %d per page, %d total\n",
                     (long) resp.photos.size(), resp.page, resp.pages, resp.perPage, resp.total);
@@ -193,7 +196,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
                     
                     std::string savePath = pos->photo->id + ".jpg";
                     std::ofstream fout(savePath, std::ios::binary);
-                    fout << &pos->buf;
+                    fout << pos->buf.get();
                     printf ("  saved %s\n", savePath.c_str());
 
                     // release slot

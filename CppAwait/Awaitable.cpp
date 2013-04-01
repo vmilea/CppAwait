@@ -75,7 +75,8 @@ Awaitable::~Awaitable()
             mStartTicket = 0;
         }
         if (mAwaitingContext != nullptr) {
-            ut_log_debug_("* while being awaited by '%s'", mAwaitingContext->tag());
+            // can't print awaiting context tag since it may have been deleted
+            ut_log_debug_("* while being awaited");
             mAwaitingContext = nullptr;
         }
 
@@ -187,6 +188,7 @@ void Awaitable::fail(std::exception_ptr eptr)
 
     ut_assert_(!didFail() && "already failed");
     ut_assert_(!didComplete() && "can't fail, already complete");
+    ut_assert_(!(eptr == std::exception_ptr()) && "invalid exception_ptr");
     mExceptionPtr = eptr;
 
     if (mDoneHandler) {

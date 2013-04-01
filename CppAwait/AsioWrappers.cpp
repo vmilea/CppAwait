@@ -25,7 +25,7 @@ namespace ut { namespace asio {
 using namespace boost::asio;
 using namespace boost::asio::ip;
 
-void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, streambuf& outResponse, size_t& outContentLength)
+void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse, size_t& outContentLength)
 {
     AwaitableHandle awt;
         
@@ -46,24 +46,23 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
         throw std::runtime_error("failed to connect socket");
     }
 
-    streambuf request;
-    size_t numBytesTransferred;
+    auto request = std::make_shared<streambuf>();
 
     // write HTTP request
-    std::ostream requestStream(&request);
+    std::ostream requestStream(request.get());
     requestStream << "GET " << path << " HTTP/1.0\r\n";
     requestStream << "Host: " << host << "\r\n";
     requestStream << "Accept: */*\r\n";
     requestStream << "Connection: close\r\n\r\n";
 
-    awt = asyncWrite(socket, request, numBytesTransferred);
+    awt = asyncWrite(socket, request);
     awt->await();
 
     // read first response line
-    awt = asyncReadUntil(socket, outResponse, std::string("\r\n"), numBytesTransferred);
+    awt = asyncReadUntil(socket, outResponse, std::string("\r\n"));
     awt->await();
 
-    std::istream responseStream(&outResponse);
+    std::istream responseStream(outResponse.get());
     std::string httpVersion;
     responseStream >> httpVersion;
     int statusCode;
@@ -79,7 +78,7 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     }
 
     // read response headers
-    awt = asyncReadUntil(socket, outResponse, std::string("\r\n\r\n"), numBytesTransferred);
+    awt = asyncReadUntil(socket, outResponse, std::string("\r\n\r\n"));
     awt->await();
 
     // process headers
@@ -95,19 +94,19 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     }
 }
 
-AwaitableHandle asyncHttpDownload(const std::string& host, const std::string& path, asio::streambuf& outResponse)
+AwaitableHandle asyncHttpDownload(const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse)
 {
     static int id = 0;
     auto tag = string_printf("asyncHttpDownload-%d", id++);
 
-    return startAsync(tag, [host, path, &outResponse](Awaitable * /* awtSelf */) {
+    return startAsync(tag, [host, path, outResponse](Awaitable * /* awtSelf */) {
         tcp::socket socket(io());
         
         size_t contentLength;
         doAsyncHttpGetHeader(socket, host, path, outResponse, contentLength);
         
         size_t numBytesTransferred;
-        AwaitableHandle awt = asyncRead(socket, outResponse, asio::transfer_exactly(contentLength - outResponse.size()), numBytesTransferred);
+        AwaitableHandle awt = asyncRead(socket, outResponse, asio::transfer_exactly(contentLength - outResponse->size()), numBytesTransferred);
         awt->await();
     });
 }

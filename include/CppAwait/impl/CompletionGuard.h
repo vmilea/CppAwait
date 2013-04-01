@@ -33,16 +33,16 @@ public:
     public:
         Token()
             : mIsBlocked(false) { }
-        
+
         bool isBlocked() const
         {
             return mIsBlocked;
         }
-    
+
     private:
         bool mIsBlocked;
 
-		friend class CompletionGuard;
+        friend class CompletionGuard;
     };
 
     CompletionGuard()
