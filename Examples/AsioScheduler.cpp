@@ -15,37 +15,42 @@
 */
 
 #include "AsioScheduler.h"
+#include "Looper/Thread.h"
 #include <CppAwait/AsioWrappers.h>
 #include <unordered_map>
+#include <memory>
 #include <cassert>
 
 class PendingRunnable;
 
-static std::unordered_map<ut::Ticket, PendingRunnable*> sPendingRunnables;
+typedef loo::lthread::mutex Mutex;
+typedef loo::lthread::lock_guard<Mutex> LockGuard;
 
-class PendingRunnableWrapper
+static Mutex sMutex;
+static std::unordered_map<ut::Ticket, std::unique_ptr<PendingRunnable> > sPendingRunnables;
+static ut::Ticket sTicketCounter = 1;
+
+class TicketRunner
 {
 public:
-    PendingRunnableWrapper(PendingRunnable *pendingRunnable)
-        : mPendingRunnable(pendingRunnable) { }
+    TicketRunner(ut::Ticket ticket)
+        : mTicket(ticket) { }
 
     void operator()(const boost::system::error_code& error) const;
 
 private:
-    mutable PendingRunnable *mPendingRunnable;
+    ut::Ticket mTicket;
 };
 
 class PendingRunnable
 {
 public:
-    PendingRunnable(ut::Runnable runnable, long delay)
-        : mRunnable(std::move(runnable))
+    PendingRunnable(ut::Ticket ticket, ut::Runnable runnable, long delay)
+        : mTicket(ticket)
+        , mRunnable(std::move(runnable))
         , mTimer(ut::asio::io(), boost::posix_time::milliseconds(delay))
     {
-        static ut::Ticket sTicketCounter = 1;
-        mTicket = sTicketCounter++;
-
-        sPendingRunnables.insert(std::make_pair(mTicket, this));
+        mTimer.async_wait(TicketRunner(mTicket));
     }
 
     ut::Ticket ticket()
@@ -53,65 +58,69 @@ public:
         return mTicket;
     }
 
-    void schedule()
-    {
-        mTimer.async_wait(PendingRunnableWrapper(this));
-    }
-
-    void cancel()
-    {
-        mTimer.cancel();
-        die();
-    }
-
     void run()
     {
         mRunnable();
-        die();
     }
 
 private:
-    void die()
-    {
-        auto pos = sPendingRunnables.find(mTicket);
-        assert (pos != sPendingRunnables.end());
-        assert (pos->second == this);
-
-        sPendingRunnables.erase(pos);
-
-        delete this;
-    }
-
+    ut::Ticket mTicket;
     ut::Runnable mRunnable;
     boost::asio::deadline_timer mTimer;
-    ut::Ticket mTicket;
 };
 
-inline void PendingRunnableWrapper::operator()(const boost::system::error_code& error) const
+inline void TicketRunner::operator()(const boost::system::error_code& error) const
 {
-    if (!error) {
-        mPendingRunnable->run();
+    // quirk: deadline_timer doesn't guarantee a non-zero error code
+	//        after cancelation, check sPendingRunnables instead
+
+    std::unique_ptr<PendingRunnable> pr;
+
+    { LockGuard _(sMutex);
+        auto pos = sPendingRunnables.find(mTicket);
+    
+        if (pos != sPendingRunnables.end()) {
+            pr = std::move(pos->second);
+            sPendingRunnables.erase(pos);
+        }
+    }
+
+    if (pr) {
+        try {
+            pr->run();
+        } catch (const std::exception& ex) {
+            fprintf (stderr, "Action %d has thrown an exception: %s - %s\n", mTicket, typeid(ex).name(), ex.what());
+        } catch (...) {
+            fprintf (stderr, "Action %d has thrown an exception\n", mTicket);
+        }
     }
 }
 
 ut::Ticket asioScheduleDelayed(long delay, ut::Runnable runnable)
 {
-    auto pr = new PendingRunnable(std::move(runnable), delay);
-    pr->schedule();
+    assert (runnable);
 
-    return pr->ticket();
+    { LockGuard _(sMutex);
+        ut::Ticket ticket = sTicketCounter++;
+
+        sPendingRunnables.insert(std::make_pair(
+            ticket,
+            std::unique_ptr<PendingRunnable>(new PendingRunnable(ticket, std::move(runnable), delay))));
+
+        return ticket;
+    }
 }
 
 bool asioCancelScheduled(ut::Ticket ticket)
 {
-    auto pos = sPendingRunnables.find(ticket);
+    { LockGuard _(sMutex);
+        auto pos = sPendingRunnables.find(ticket);
 
-    if (pos == sPendingRunnables.end()) {
-        return false;
-    } else {
-        PendingRunnable *pr = pos->second;
-        pr->cancel();
-
-        return true;
+        if (pos == sPendingRunnables.end()) {
+            return false;
+        } else {
+            sPendingRunnables.erase(pos);
+            return true;
+        }
     }
 }
