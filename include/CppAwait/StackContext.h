@@ -79,8 +79,8 @@ private:
     static void contextFunc(intptr_t data);
 
     StackContext();
-    StackContext(const StackContext& other);
-    StackContext& operator=(const StackContext& other);
+    StackContext(const StackContext& other); // noncopyable
+    StackContext& operator=(const StackContext& other);  // noncopyable
 
     void* implYieldTo(StackContext *resumeContext, YieldType type, void *value);
 

@@ -38,14 +38,11 @@ public:
         {
             return mIsBlocked;
         }
-
-        void block()
-        {
-            mIsBlocked = true;
-        }
     
     private:
         bool mIsBlocked;
+
+		friend class CompletionGuard;
     };
 
     CompletionGuard()
@@ -63,7 +60,7 @@ public:
 
     void block()
     {
-        mToken->block();
+        mToken->mIsBlocked = true;
     }
 
 private:

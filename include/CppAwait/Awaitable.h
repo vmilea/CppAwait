@@ -39,6 +39,8 @@ namespace ut {
 //
 typedef int Ticket;
 
+static const Ticket NO_TICKET = 0;
+
 // Schedule an action to execute after delay milliseconds.
 //
 // Note: schedule(0, a), schedule(0, b) implies b cannot run before a.
@@ -120,6 +122,10 @@ protected:
 
     void *mUserData;
     Runnable mUserDataDeleter;
+
+private:
+    Awaitable(const Awaitable&); // noncopyable
+    Awaitable& operator=(const Awaitable&); // noncopyable
 
     template <typename Collection>
     friend typename Collection::iterator awaitAny(Collection& awaitables);
@@ -234,6 +240,26 @@ typename Collection::iterator awaitAny(Collection& awaitables)
     ut_assert_(completedAwt->isDone());
 
     return completedPos;
+}
+
+template <typename Collection>
+AwaitableHandle asyncAll(Collection& awaitables)
+{
+    return startAsync("asyncAll", [&awaitables](Awaitable* /* awtSelf */) {
+        awaitAll(awaitables);
+    });
+}
+
+template <typename Collection>
+AwaitableHandle asyncAny(Collection& awaitables, typename Collection::iterator& pos)
+{
+    return startAsync("asyncAny", [&awaitables, &pos](Awaitable* /* awtSelf */) {
+        if (awaitables.empty()) {
+            yieldTo(mainContext()); // never complete
+        } else {
+            pos = awaitAny(awaitables);
+        }
+    });
 }
 
 // convenience overloads
@@ -355,69 +381,71 @@ inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, A
 }
 
 //
-// WhenAll
-//
-
-template <typename Collection>
-class WhenAll : public Awaitable
-{
-public:
-    WhenAll(Collection& awaitables)
-        : mAwaitables(awaitables) { }
-
-    void await()
-    {
-        if (!mDidComplete) {
-            awaitAll(mAwaitables);
-            mDidComplete = true;
-        }
-    }
-
-private:
-    Collection& mAwaitables;
-};
-
-//
-// WhenAny
-//
-
-template <typename Collection>
-class WhenAny : public Awaitable
-{
-public:
-    WhenAny(Collection& awaitables)
-        : mAwaitables(awaitables) { }
-
-    void await()
-    {
-        if (!mDidComplete) {
-            awaitAny(mAwaitables);
-            mDidComplete = true;
-        }
-    }
-
-private:
-    Collection& mAwaitables;
-};
-
-//
 // Completable - exposes complete/fail
 //
 
 class Completable : public Awaitable
 {
 public:
-    Completable() { }
-
-    void complete()
+    Completable()
+        : mTicket(0)
     {
+        setTag("Completable");
+    }
+
+    ~Completable()
+    {
+        if (mTicket != 0) {
+            cancelScheduled(mTicket);
+        }
+    }
+
+    void complete() // not virtual
+    {
+        // callable only from main context
+
+        ut_assert_(mTicket == 0);
+        ut_assert_(currentContext() == mainContext());
+
         Awaitable::complete();
     }
 
-    void fail(std::exception_ptr eptr)
+    void fail(std::exception_ptr eptr)  // not virtual
     {
+        // callable only from main context
+
+        ut_assert_(mTicket == 0);
+        ut_assert_(currentContext() == mainContext());
+
         Awaitable::fail(eptr);
     }
+
+    void scheduleComplete()
+    {
+        // callable from any stack context
+
+        if (mTicket == 0) {
+            mTicket = schedule([this]() {
+                mTicket = 0;
+                complete();
+            });
+        }
+    }
+
+    void scheduleFail(std::exception_ptr eptr)
+    {
+        // callable from any stack context
+
+        if (mTicket == 0) {
+            mTicket = schedule([this, eptr]() {
+                mTicket = 0;
+                fail(eptr);
+            });
+        }
+    }
+
+private:
+    Ticket mTicket;
 };
 
 //
