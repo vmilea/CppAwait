@@ -50,7 +50,7 @@
 
 inline const char* readLine()
 {
-    static char line[256];
+    static char line[512];
     
     void* result = fgets(line, sizeof(line), stdin);
 

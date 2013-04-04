@@ -29,8 +29,10 @@ void ex_awaitBasics();
 void ex_awaitHttpClient();
 void ex_awaitFlickr();
 void ex_awaitThread();
+void ex_awaitChatServer();
+void ex_awaitChatClient();
 
-const std::array<std::pair<ExampleFunc, std::string>, 7> EXAMPLES =
+const std::array<std::pair<ExampleFunc, std::string>, 9> EXAMPLES =
 { {
     std::make_pair(&ex_fibonacci, "coroutines - fibonacci sequence generator"),
     std::make_pair(&ex_iterator, "coroutines - collection iterator"),
@@ -38,7 +40,9 @@ const std::array<std::pair<ExampleFunc, std::string>, 7> EXAMPLES =
     std::make_pair(&ex_awaitBasics, "await - basics"),
     std::make_pair(&ex_awaitHttpClient, "await - HTTP client"),
     std::make_pair(&ex_awaitFlickr, "await - Flickr client"),
-    std::make_pair(&ex_awaitThread, "await - threads example")
+    std::make_pair(&ex_awaitThread, "await - threads example"),
+    std::make_pair(&ex_awaitChatServer, "await - chat server"),
+    std::make_pair(&ex_awaitChatClient, "await - chat client")
 } };
 
 int main(int argc, char** argv)
@@ -53,7 +57,7 @@ int main(int argc, char** argv)
 
     while (selected < 1 || EXAMPLES.size() < selected) {
         printf ("Examples:\n\n");
-            
+
         for (size_t i = 0; i < EXAMPLES.size(); i++) {
             printf ("%02d: %s\n", (int) (i + 1), EXAMPLES[i].second.c_str());
         }
@@ -70,6 +74,8 @@ int main(int argc, char** argv)
 
     auto& example = EXAMPLES[selected - 1];
     example.first();
+
+    printf ("\nDONE\n");
 
     return 0;
 }
