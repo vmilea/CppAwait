@@ -66,8 +66,8 @@ static FlickrPhotos parseFlickrResponse(streambuf& response)
     pt::ptree ptree;
     pt::read_xml(ss, ptree);
 
-    const auto& resp = ptree.get_child("rsp");
-    const auto& stat = resp.get("<xmlattr>.stat", "error");
+    const pt::ptree& resp = ptree.get_child("rsp");
+    const std::string& stat = resp.get("<xmlattr>.stat", "error");
 
     if (stat != "ok") {
         printf ("\nbad response:\n%s\n", ss.str().c_str());
@@ -75,7 +75,7 @@ static FlickrPhotos parseFlickrResponse(streambuf& response)
     }
 
     foreach_(const auto& node, resp.get_child("photos")) {
-        const auto& value = node.second;
+        const pt::ptree& value = node.second;
 
         if (node.first == "<xmlattr>") {
             result.page = value.get<int>("page");
@@ -138,7 +138,8 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
             FlickrPhoto *photo;
 
             DownloadSlot()
-                : buf(std::make_shared<streambuf>()) { }
+                : buf(std::make_shared<streambuf>())
+                , photo(nullptr) { }
         };
 
         typedef std::array<DownloadSlot, MAX_PARALLEL_DOWNLOADS> DownloadSlots;
@@ -200,7 +201,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
                     printf ("  saved %s\n", savePath.c_str());
 
                     // release slot
-                    pos->awaitable.reset();
+                    pos->awaitable = nullptr;
                     pos->photo = nullptr;
                     numSlotsUsed--;
                 

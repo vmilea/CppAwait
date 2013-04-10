@@ -20,8 +20,6 @@
 #include <CppAwait/AsioWrappers.h>
 #include <set>
 #include <queue>
-#include <boost/lexical_cast.hpp>
-#include <boost/algorithm/string.hpp>
 
 //
 // ABOUT: chat server, similar to Asio chat example
@@ -118,10 +116,7 @@ public:
     }
 
     // deleting the session will interrupt the coroutine
-    ~ClientSession()
-    {
-        mRoom.leave(this);
-    }
+    ~ClientSession() { }
 
     const std::string& nickname() // override
     {
@@ -197,8 +192,12 @@ public:
                 } while (true);
             });
 
+            // yield until /leave or Asio exception
             ut::AwaitableHandle& done = ut::awaitAny(awtReader, awtWriter);
-            done->await(); // check for exception
+
+            mRoom.leave(this);
+
+            done->await(); // check for exception, won't yield again since already done
         });
     }
 
@@ -229,38 +228,56 @@ static ut::AwaitableHandle asyncChatServer(unsigned short port)
         SessionList mSessions;
 
         tcp::endpoint endpoint(tcp::v4(), port);
-        tcp::acceptor acceptor(ut::asio::io(), endpoint);
+
+        tcp::acceptor acceptor(ut::asio::io(), endpoint.protocol());
+        try {
+            acceptor.bind(endpoint);
+            acceptor.listen();
+        } catch (...) {
+            printf ("Couldn't bind to port %u.\n", port);
+            return;
+        }
+
+        std::unique_ptr<ClientSession> session;
+        ut::AwaitableHandle awtAccept;
 
         while (true) {
             printf ("waiting for clients to connect / disconnect...\n");
 
-            std::unique_ptr<ClientSession> session(new ClientSession(room));
-            SessionList::iterator posTerminated;
+            if (!awtAccept) {
+                // prepare for new connection
+                session.reset(new ClientSession(room));
+                awtAccept = ut::asio::asyncAccept(acceptor, session->socket());
+            }
 
-            ut::AwaitableHandle awtAccept = ut::asio::asyncAccept(acceptor, session->socket());
+            SessionList::iterator posTerminated;
 
             // combine the list of awaitables for easier manipulation
             ut::AwaitableHandle awtSessionTerminated = ut::asyncAny(mSessions, posTerminated);
 
+            // yield until a new connection has been accepted / terminated
             ut::AwaitableHandle& done = ut::awaitAny(awtAccept, awtSessionTerminated);
 
             if (done == awtAccept) {
                 try {
-                    awtAccept->await(); // check for exceptions
+                    awtAccept->await(); // check for exception
                     printf ("client acepted\n");
+
+                    // start session coroutine
+                    session->start();
+                    mSessions.push_back(std::move(session));
                 } catch(...) {
                     printf ("failed to accept client\n");
                 }
 
-                // start session coroutine
-                session->start();
-                mSessions.push_back(std::move(session));
+                session = nullptr;
+                awtAccept = nullptr;
             } else {
                 // remove terminated session
                 ClientSession *session = posTerminated->get();
 
                 try {
-                    session->awaitable()->await(); // check for exceptions
+                    session->awaitable()->await(); // check for exception
                     printf ("client '%s' has left\n", session->nickname().c_str());
                 } catch(...) {
                     printf ("client '%s' disconnected\n", session->nickname().c_str());

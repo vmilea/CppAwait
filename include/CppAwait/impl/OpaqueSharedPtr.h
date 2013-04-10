@@ -56,7 +56,7 @@ public:
 
     void clear()
     {
-        mHolder.reset();
+        mHolder = nullptr;
     }
 
     long useCount() const

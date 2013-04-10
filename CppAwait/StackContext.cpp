@@ -35,8 +35,8 @@ namespace ctx = boost::context;
 static StackContext *sMainContext = nullptr;
 static StackContext *sCurrentContext = nullptr;
 
-static std::exception_ptr sForcedUnwindPtr;
-static std::exception_ptr sYieldForbiddenPtr;
+static std::exception_ptr *sForcedUnwindPtr = nullptr;
+static std::exception_ptr *sYieldForbiddenPtr = nullptr;
 
 
 //
@@ -57,8 +57,13 @@ void initMainContext()
     // make some exception_ptr in advance to avoid problems
     // with std::current_exception() during exception propagation
     //
-    sForcedUnwindPtr = ut::make_exception_ptr(ForcedUnwind());
-    sYieldForbiddenPtr = ut::make_exception_ptr(YieldForbidden());
+    // + wiggle around non-deterministic destruction of globals
+    //   by leaking on purpose
+    //
+    sForcedUnwindPtr = new std::exception_ptr(
+                ut::make_exception_ptr(ForcedUnwind()));
+    sYieldForbiddenPtr = new std::exception_ptr(
+                ut::make_exception_ptr(YieldForbidden()));
 }
 
 StackContext* mainContext()
@@ -180,7 +185,9 @@ static StackPool sPool;
 
 std::exception_ptr ForcedUnwind::ptr()
 {
-    return sForcedUnwindPtr;
+    ut_assert_(sForcedUnwindPtr != NULL && "not initialized");
+
+    return *sForcedUnwindPtr;
 }
 
 
@@ -190,7 +197,9 @@ std::exception_ptr ForcedUnwind::ptr()
 
 std::exception_ptr YieldForbidden::ptr()
 {
-    return sYieldForbiddenPtr;
+    ut_assert_(sYieldForbiddenPtr != NULL && "not initialized");
+
+    return *sYieldForbiddenPtr;
 }
 
 

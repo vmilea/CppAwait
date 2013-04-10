@@ -220,7 +220,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
 
     yieldTo(mainContext());
 
-    typename Collection::iterator completedPos;
+    auto completedPos = awaitables.end();
     Awaitable *completedAwt = nullptr;
 
     for (auto it = awaitables.begin(); it != awaitables.end(); ++it) {

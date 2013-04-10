@@ -104,7 +104,7 @@ AwaitableHandle asyncConnect(Socket& socket, Iterator begin, Iterator& outConnec
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        async_connect(socket, begin, [&, guardToken](const boost::system::error_code& ec, Iterator iterator) {
+        boost::asio::async_connect(socket, begin, [&, guardToken](const boost::system::error_code& ec, Iterator iterator) {
             if (guardToken->isBlocked()) {
                 return;
             }

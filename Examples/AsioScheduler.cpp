@@ -72,13 +72,13 @@ private:
 inline void TicketRunner::operator()(const boost::system::error_code& error) const
 {
     // quirk: deadline_timer doesn't guarantee a non-zero error code
-	//        after cancelation, check sPendingRunnables instead
+    //        after cancelation, check sPendingRunnables instead
 
     std::unique_ptr<PendingRunnable> pr;
 
     { LockGuard _(sMutex);
         auto pos = sPendingRunnables.find(mTicket);
-    
+
         if (pos != sPendingRunnables.end()) {
             pr = std::move(pos->second);
             sPendingRunnables.erase(pos);
