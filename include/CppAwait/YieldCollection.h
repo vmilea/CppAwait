@@ -68,6 +68,8 @@ public:
             mCurrentValue = other.mCurrentValue;
             other.mCurrentValue = YC_DONE;
         }
+
+        return *this;
     }
 
     iterator begin()

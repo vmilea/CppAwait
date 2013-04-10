@@ -35,7 +35,7 @@ static ut::AwaitableHandle asyncCountdown()
 {
     return ut::startAsync("asyncCountdown", [](ut::Awaitable * /* awtSelf */) {
         ut::StackContext *context = ut::currentContext();
-        
+
         timed_mutex mutex;
         condition_variable_any cond;
         bool isInterrupted = false;
@@ -43,10 +43,10 @@ static ut::AwaitableHandle asyncCountdown()
 
         thread countdownThread([&]() {
             unique_lock<timed_mutex> lock(mutex);
-            
+
             for (int i = 3; i > 0 && !isInterrupted; i--) {
                 printf ("%d seconds until liftoff...\n", i);
-                
+
                 // up to 1 second of interruptible sleep
                 auto timepoint = chrono::steady_clock::now() + chrono::milliseconds(1000);
                 cond.wait_until(lock, timepoint, [&] { return isInterrupted; });
@@ -60,7 +60,7 @@ static ut::AwaitableHandle asyncCountdown()
                 // MSVC10 workaround, inner lambda can't access captured variable
                 timed_mutex& lambdaMutex = mutex;
 
-                // resume awaitable, must do it from main thread
+                // resume awaitable, yield must be called from main thread
                 completionTicket = ut::schedule([&]() {
                     { lock_guard<timed_mutex> _(lambdaMutex);
                         completionTicket = 0;
@@ -73,12 +73,14 @@ static ut::AwaitableHandle asyncCountdown()
         try {
             ut::yield();
         } catch (const ut::ForcedUnwind&) {
+            printf ("aborting liftoff...\n");
+
             // launch aborted, interrupt countdown thread
             lock_guard<timed_mutex> _(mutex);
             isInterrupted = true;
             cond.notify_one();
         }
-        
+
         countdownThread.join();
         printf ("\njoined countdown thread\n");
 
@@ -94,37 +96,26 @@ static ut::AwaitableHandle asyncKey()
     return ut::startAsync("asyncKey", [](ut::Awaitable * /* awtSelf */) {
         ut::StackContext *context = ut::currentContext();
 
-        timed_mutex mutex;
-        ut::Ticket completionTicket = 0;
-
         thread keyThread([&]() {
-            lock_guard<timed_mutex> _(mutex);
-
-            // Wait for user to hit [Return]. For illustration only. Relying on blocking
-            // calls is bad practice, an awaitable should handle interruption quickly.
+            // Wait for user to hit [Return]. Uninterruptible blocking calls
+            // are generally a bad idea. Here we pretend it's safe to kill
+            // thread at any time.
             readLine();
 
-            // MSVC10 workaround, inner lambda can't access captured variable
-            timed_mutex& lambdaMutex = mutex;
-
-            completionTicket = ut::schedule([&]() {
-                { lock_guard<timed_mutex> _(lambdaMutex);
-                    completionTicket = 0;
-                }
+            ut::schedule([&]() {
                 ut::yieldTo(context);
             });
         });
 
+
         try {
             ut::yield();
-        } catch (const ut::ForcedUnwind&) {
-        }
-        
-        keyThread.join();
-        printf ("\njoined key thread\n");
 
-        if (completionTicket != 0) {
-            ut::cancelScheduled(completionTicket);
+            keyThread.join();
+            printf ("\njoined key thread\n");
+        } catch (const ut::ForcedUnwind&) {
+            keyThread.detach();
+            printf ("\nkilled key thread\n");
         }
     });
 }
@@ -133,26 +124,20 @@ static ut::AwaitableHandle asyncThread()
 {
     return ut::startAsync("asyncThread", [](ut::Awaitable * /* awtSelf */) {
         printf ("hit [Return] to abort launch\n\n");
-        
+
         {
             ut::AwaitableHandle awtCountdown = asyncCountdown();
             ut::AwaitableHandle awtKey = asyncKey();
 
             // wait until liftoff or abort
-            ut::AwaitableHandle& completed = ut::awaitAny(awtCountdown, awtKey);
-
-            if (completed == awtCountdown) {
-                printf ("\nDONE. HIT RETURN TO QUIT...\n");
-            } else {
-                printf ("\nINTERRUPTED\n");
-            }
+            ut::awaitAny(awtCountdown, awtKey);
 
             // scope end, the other awaitable will interrupt itself
         }
 
         ut::schedule([]() {
             loo::mainLooper().quit();
-        });        
+        });
     });
 }
 
