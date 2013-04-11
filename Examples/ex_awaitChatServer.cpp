@@ -156,8 +156,7 @@ public:
             mRoom.join(this);
 
             // this coroutine reads inbound messages
-            ut::AwaitableHandle awtReader = ut::startAsync("clientSession-reader", [this](ut::Awaitable * /* awtSelf */) {
-                auto recv = std::make_shared<boost::asio::streambuf>();
+            ut::AwaitableHandle awtReader = ut::startAsync("clientSession-reader", [this, recv](ut::Awaitable * /* awtSelf */) {
                 std::string line;
 
                 bool quit = false;

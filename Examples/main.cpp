@@ -31,8 +31,10 @@ void ex_awaitFlickr();
 void ex_awaitThread();
 void ex_awaitChatServer();
 void ex_awaitChatClient();
+void ex_stockServer();
+void ex_stockClient();
 
-const std::array<std::pair<ExampleFunc, std::string>, 9> EXAMPLES =
+const std::array<std::pair<ExampleFunc, std::string>, 11> EXAMPLES =
 { {
     std::make_pair(&ex_fibonacci, "coroutines - fibonacci sequence generator"),
     std::make_pair(&ex_iterator, "coroutines - collection iterator"),
@@ -42,7 +44,9 @@ const std::array<std::pair<ExampleFunc, std::string>, 9> EXAMPLES =
     std::make_pair(&ex_awaitFlickr, "await - Flickr client"),
     std::make_pair(&ex_awaitThread, "await - threads example"),
     std::make_pair(&ex_awaitChatServer, "await - chat server"),
-    std::make_pair(&ex_awaitChatClient, "await - chat client")
+    std::make_pair(&ex_awaitChatClient, "await - chat client"),
+    std::make_pair(&ex_stockServer, "stock price server"),
+    std::make_pair(&ex_stockClient, "stock price client")
 } };
 
 int main(int argc, char** argv)
