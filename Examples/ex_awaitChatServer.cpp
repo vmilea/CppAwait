@@ -143,10 +143,46 @@ public:
 
     void start()
     {
-        // session coroutine handles handshake, reads & writes
-        mAwt = ut::startAsync("clientSession-start", [this](ut::Awaitable * /* awtSelf */) {
-            auto recv = std::make_shared<boost::asio::streambuf>();
+        auto recv = std::make_shared<boost::asio::streambuf>();
 
+        // this coroutine reads inbound messages
+        ut::Awaitable::AsyncFunc writer = [this](ut::Awaitable * /* awtSelf */) {
+            do {
+                if (mMsgQueue.empty()) {
+                    mAwtMsgQueued->await(); // yield until we have outbound messages
+                    mAwtMsgQueued.reset(new ut::Completable());
+                } else {
+                    MessageCRef msg = mMsgQueue.front();
+                    mMsgQueue.pop();
+
+                    ut::AwaitableHandle awt = ut::asio::asyncWrite(*mSocket, msg);
+                    awt->await(); // yield until message delivered
+                }
+            } while (true);
+        };
+
+        // this coroutine writes outbound messages
+        ut::Awaitable::AsyncFunc reader = [this, recv](ut::Awaitable * /* awtSelf */) {
+            std::string line;
+
+            bool quit = false;
+            do {
+                ut::AwaitableHandle awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
+                awt->await(); // yield until we have inbound messages
+
+                std::istream recvStream(recv.get());
+                std::getline(recvStream, line);
+
+                if (line == "/leave") {
+                    quit = true;
+                } else {
+                    mRoom.broadcast(mNickname, line);
+                }
+            } while (!quit);
+        };
+
+        // main coroutine handles handshake, reads & writes
+        mAwt = ut::startAsync("clientSession-start", [this, writer, reader, recv](ut::Awaitable * /* awtSelf */) {
             // first message is nickname
             ut::AwaitableHandle awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
             awt->await();
@@ -155,41 +191,8 @@ public:
 
             mRoom.join(this);
 
-            // this coroutine reads inbound messages
-            ut::AwaitableHandle awtReader = ut::startAsync("clientSession-reader", [this, recv](ut::Awaitable * /* awtSelf */) {
-                std::string line;
-
-                bool quit = false;
-                do {
-                    ut::AwaitableHandle awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
-                    awt->await(); // yield until we have inbound messages
-
-                    std::istream recvStream(recv.get());
-                    std::getline(recvStream, line);
-
-                    if (line == "/leave") {
-                        quit = true;
-                    } else {
-                        mRoom.broadcast(mNickname, line);
-                    }
-                } while (!quit);
-            });
-
-            // this coroutine writes outbound messages
-            ut::AwaitableHandle awtWriter = ut::startAsync("clientSession-writer", [this](ut::Awaitable * /* awtSelf */) {
-                do {
-                    if (mMsgQueue.empty()) {
-                        mAwtMsgQueued->await(); // yield until we have outbound messages
-                        mAwtMsgQueued.reset(new ut::Completable());
-                    } else {
-                        MessageCRef msg = mMsgQueue.front();
-                        mMsgQueue.pop();
-
-                        ut::AwaitableHandle awt = ut::asio::asyncWrite(*mSocket, msg);
-                        awt->await(); // yield until message delivered
-                    }
-                } while (true);
-            });
+            ut::AwaitableHandle awtReader = ut::startAsync("clientSession-reader", reader);
+            ut::AwaitableHandle awtWriter = ut::startAsync("clientSession-writer", writer);
 
             // yield until /leave or Asio exception
             ut::AwaitableHandle& done = ut::awaitAny(awtReader, awtWriter);

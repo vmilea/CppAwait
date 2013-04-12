@@ -131,7 +131,9 @@ AwaitableHandle asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        acceptor.async_accept(*peer, [&, guardToken, peer](const boost::system::error_code& ec) {
+        auto lambdaPeer = peer; // MSVC10 725134
+
+        acceptor.async_accept(*peer, [&, guardToken, lambdaPeer](const boost::system::error_code& ec) {
             if (guardToken->isBlocked()) {
                 return;
             }
@@ -155,7 +157,10 @@ AwaitableHandle asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        acceptor.async_accept(*peer, *peerEndpoint, [&, guardToken, peer, peerEndpoint](const boost::system::error_code& ec) {
+        auto lambdaPeer = peer; // MSVC10 725134
+        auto lambdaPeerEndpoint = peer;
+
+        acceptor.async_accept(*peer, *peerEndpoint, [&, guardToken, lambdaPeer, lambdaPeerEndpoint](const boost::system::error_code& ec) {
             if (guardToken->isBlocked()) {
                 return;
             }
@@ -180,7 +185,9 @@ AwaitableHandle asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence& 
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_write(stream, buffers, completionCondition, [&, guardToken, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        auto lambdaMasterBuffer = masterBuffer; // MSVC10 725134
+
+        boost::asio::async_write(stream, buffers, completionCondition, [&, guardToken, lambdaMasterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
@@ -220,7 +227,9 @@ AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asio
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_write(stream, *buffer, completionCondition, [&, guardToken, buffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        auto lambdaBuffer = buffer; // MSVC10 725134
+
+        boost::asio::async_write(stream, *buffer, completionCondition, [&, guardToken, lambdaBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
@@ -254,7 +263,9 @@ AwaitableHandle asyncRead(AsyncReadStream& stream, const MutableBufferSequence& 
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_read(stream, outBuffers, completionCondition, [&, guardToken, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        auto lambdaMasterBuffer = masterBuffer; // MSVC10 725134
+
+        boost::asio::async_read(stream, outBuffers, completionCondition, [&, guardToken, lambdaMasterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
@@ -294,7 +305,9 @@ AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_read(stream, *outBuffer, completionCondition, [&, guardToken, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        auto lambdaOutBuffer = outBuffer; // MSVC10 725134
+
+        boost::asio::async_read(stream, *outBuffer, completionCondition, [&, guardToken, lambdaOutBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }
@@ -328,7 +341,9 @@ AwaitableHandle asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::a
         CompletionGuard guard;
         auto guardToken = guard.getToken();
 
-        boost::asio::async_read_until(stream, *outBuffer, condition, [&, guardToken, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+        auto lambdaOutBuffer = outBuffer; // MSVC10 725134
+
+        boost::asio::async_read_until(stream, *outBuffer, condition, [&, guardToken, lambdaOutBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
             if (guardToken->isBlocked()) {
                 return;
             }

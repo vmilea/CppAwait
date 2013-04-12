@@ -26,6 +26,7 @@
 
 using namespace boost::asio::ip;
 using namespace loo::lthread;
+using namespace loo::lchrono;
 
 typedef std::shared_ptr<const std::string> MessageCRef;
 
@@ -39,7 +40,7 @@ static std::unique_ptr<ut::Completable> sAwtMsgQueued;
 static void inputFunc()
 {
     // sleep to tidy up output
-    this_thread::sleep_for(std::chrono::milliseconds(50));
+    this_thread::sleep_for(chrono::milliseconds(50));
     printf (" > ");
 
     do {
@@ -56,15 +57,53 @@ static void inputFunc()
         });
 
         // sleep to tidy up output
-        this_thread::sleep_for(std::chrono::milliseconds(50));
+        this_thread::sleep_for(chrono::milliseconds(50));
         printf (" > ");
     } while(true);
 }
 
 static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::string& port, const std::string& nickname)
 {
+    // this coroutine reads & prints inbound messages
+    auto reader = [](tcp::socket& socket, ut::Awaitable * /* awtSelf */) {
+        auto recv = std::make_shared<boost::asio::streambuf>();
+        std::string msg;
+
+        do {
+            ut::AwaitableHandle awt = ut::asio::asyncReadUntil(socket, recv, std::string("\n"));
+            awt->await(); // yield until we have an inbound message
+
+            std::istream recvStream(recv.get());
+            std::getline(recvStream, msg);
+
+            printf ("-- %s\n", msg.c_str());
+        } while (true);
+    };
+
+    // this coroutine writes outbound messages
+    auto writer = [](tcp::socket& socket, ut::Awaitable * /* awtSelf */) {
+        bool quit = false;
+
+        do {
+            if (sMsgQueue.empty()) {
+                sAwtMsgQueued->await(); // yield until we have outbound messages
+                sAwtMsgQueued.reset(new ut::Completable());
+            } else {
+                MessageCRef msg = sMsgQueue.front();
+                sMsgQueue.pop();
+
+                if (*msg == "/leave\n") {
+                    quit = true;
+                } else {
+                    ut::AwaitableHandle awt = ut::asio::asyncWrite(socket, msg);
+                    awt->await(); // yield until message delivered
+                }
+            }
+        } while (!quit);
+    };
+
     // main coroutine handles connection, handshake, reads & writes
-    return ut::startAsync("asyncChatClient", [host, port, nickname](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncChatClient", [host, port, nickname, reader, writer](ut::Awaitable * /* awtSelf */) {
         try {
             ut::AwaitableHandle awt;
 
@@ -96,41 +135,13 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
             sAwtMsgQueued.reset(new ut::Completable());
 
             // this coroutine reads & prints inbound messages
-            ut::AwaitableHandle awtReader = ut::startAsync("chatClient-reader", [&socket](ut::Awaitable * /* awtSelf */) {
-                auto recv = std::make_shared<boost::asio::streambuf>();
-                std::string msg;
-
-                do {
-                    ut::AwaitableHandle awt = ut::asio::asyncReadUntil(socket, recv, std::string("\n"));
-                    awt->await(); // yield until we have an inbound message
-
-                    std::istream recvStream(recv.get());
-                    std::getline(recvStream, msg);
-
-                    printf ("-- %s\n", msg.c_str());
-                } while (true);
+            ut::AwaitableHandle awtReader = ut::startAsync("chatClient-reader", [=, &socket](ut::Awaitable *awtSelf) {
+                reader(socket, awtSelf);
             });
 
             // this coroutine writes outbound messages
-            ut::AwaitableHandle awtWriter = ut::startAsync("chatClient-writer", [&socket](ut::Awaitable * /* awtSelf */) {
-                bool quit = false;
-
-                do {
-                    if (sMsgQueue.empty()) {
-                        sAwtMsgQueued->await(); // yield until we have outbound messages
-                        sAwtMsgQueued.reset(new ut::Completable());
-                    } else {
-                        MessageCRef msg = sMsgQueue.front();
-                        sMsgQueue.pop();
-
-                        if (*msg == "/leave\n") {
-                            quit = true;
-                        } else {
-                            ut::AwaitableHandle awt = ut::asio::asyncWrite(socket, msg);
-                            awt->await(); // yield until message delivered
-                        }
-                    }
-                } while (!quit);
+            ut::AwaitableHandle awtWriter = ut::startAsync("chatClient-writer", [=, &socket](ut::Awaitable *awtSelf) {
+                writer(socket, awtSelf);
             });
 
             // quit on /leave or Asio exception

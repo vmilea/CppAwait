@@ -35,11 +35,11 @@ void ex_stockServer()
 {
     // dummy stock prices
     std::map<std::string, float> stocks;
-    stocks["INTC"] = 22.39;
-    stocks["AMD"] = 2.61;
-    stocks["NVDA"] = 12.70;
-    stocks["ARMH"] = 40.70;
-    stocks["TXN"] = 35.75;
+    stocks["INTC"] = 22.39f;
+    stocks["AMD"] = 2.61f;
+    stocks["NVDA"] = 12.70f;
+    stocks["ARMH"] = 40.70f;
+    stocks["TXN"] = 35.75f;
 
     boost::asio::io_service io;
 

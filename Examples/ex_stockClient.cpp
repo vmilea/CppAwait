@@ -119,7 +119,7 @@ static void fetchStocks_asyncAwait(const std::string& host, const std::string& p
                 awt->await();
 
                 // read price
-                awt = ut::asio::asyncReadUntil(socket, replyBuf, "\n");
+                awt = ut::asio::asyncReadUntil(socket, replyBuf, std::string("\n"));
                 awt->await();
                 std::istream is(replyBuf.get());
                 is >> price;
