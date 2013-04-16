@@ -14,6 +14,13 @@
 * limitations under the License.
 */
 
+/**
+ * @file  Awaitable.h
+ *
+ * Declares the Awaitable class and related helpers.
+ *
+ */
+
 #pragma once
 
 #include "Config.h"
@@ -30,41 +37,55 @@
 
 namespace ut {
 
-//
-// scheduling hooks, for integration with whatever
-// main loop you're using (Qt / GLib / MFC / Asio ...)
-//
+/**
+ * @name Scheduling hooks
+ *
+ * Hooks for integration with the main loop of your program (Qt / GLib / MFC / Asio ...)
+ */
+///@{
 
-// Unique ID for a scheduled action. May be used to cancel the action.
-//
+/** Unique ID for a scheduled action, may be used to cancel an action */
 typedef int Ticket;
 
+/** Reserved ticket ID */
 static const Ticket NO_TICKET = 0;
 
-// Schedule an action to execute after delay milliseconds.
-//
-// Note: schedule(0, a), schedule(0, b) implies b cannot run before a.
-//
+/**
+ * Hook signature -- schedule a delayed action
+ * @param delay     milliseconds to wait before running
+ * @param runnable  action to run
+ * @return  unique ticket ID
+ *
+ * Note:
+ * - runnable shall not be invoked from within this function even if delay is 0
+ * - schedule(0, a), schedule(0, b) implies b cannot run before a
+ */
 typedef Ticket (*ScheduleDelayedFunc)(long delay, Runnable runnable);
 
-// Cancel action associated with ticket. Returns false if action
-// has already executed or if ticket invalid.
-//
+/**
+ * Hook signature -- cancel an action
+ * @param ticket  ID of a scheduled action
+ * @return  false if action has already executed or if ticket invalid
+ */
 typedef bool (*CancelScheduledFunc)(Ticket ticket);
 
-// Setup scheduling hooks, this must be done before using Awaitable.
-//
+/** Setup scheduling hooks. This must be done before using Awaitable. */
 void initScheduler(ScheduleDelayedFunc schedule, CancelScheduledFunc cancel);
 
 //
 // generic scheduling interface
 //
 
+/** Schedules an action with delay 0 using registered hook */
 Ticket schedule(Runnable runnable);
 
+/** Schedules an action using registered hook */
 Ticket scheduleDelayed(long delay, Runnable runnable);
 
+/** Cancels an action using registered hook */
 bool cancelScheduled(Ticket ticket);
+
+///@}
 
 //
 // Awaitable
@@ -72,44 +93,115 @@ bool cancelScheduled(Ticket ticket);
 
 class Awaitable;
 
+/** Unique reference to an Awaitable */
 typedef std::unique_ptr<Awaitable> AwaitableHandle;
 
+/**
+ * Wrapper for asynchronous operations
+ *
+ * Awaitable is an a abstraction for asynchronous operations. It represents a
+ * unit of work that is expected to finish at some time in the future.
+ *
+ * While inside a couroutine it's possible to _await_ for some Awaitable to finish. In
+ * the coroutine, await() appears to block until the Awaitable completes or fails.
+ * Actually the coroutine is suspended and yields control immediately to the program's
+ * main loop, allowing for other work to be done while the asynchronous operation is
+ * running.
+ *
+ * An awaitable operation may be implemented as a coroutine (usually when composing
+ * simpler awaitables). Or the Awaitable could be hooked to some task running on an
+ * external thread.
+ *
+ * The Awaitable owns its asynchronous operation. Destroying it must immediately
+ * interrupt the operation.
+ *
+ * @warning Not thread safe. Awaitables are designed for single-threaded use.
+ *
+ */
 class Awaitable
 {
 public:
+    /** Coroutine signature required by startAsync() */
     typedef std::function<void (Awaitable *awtSelf)> AsyncFunc;
+
+    /** Signature for a custom handler to be called after complete / fail */
     typedef std::function<void (Awaitable *awt)> OnDoneHandler;
 
+    /** Destructor */
     virtual ~Awaitable();
 
+    /**
+     * Suspend current context until done
+     *
+     * If not yet done, await() yields control to main context. As an optimization,
+     * if the Awaitable was created with startAsync() and it has not yet started,
+     * control will be yielded directly to its coroutine instead.
+     *
+     * On successful completion the awaiting context is resumed. Subsequent
+     * calls to await() will return immediately.
+     * On failure the exception will be raised in the awaiting context (if any).
+     * Each subsequent await() will raise the exception again.
+     *
+     * Note:
+     * - must be called from a coroutine (not from main context)
+     * - awaiting from several contexts at the same time is not supported
+     */
     void await();
 
+    /* True if operation has completed successfully */
     bool didComplete();
 
+    /** True if operation has failed */
     bool didFail();
 
+    /** True if completed or failed */
     bool isDone();
 
+    /** Set a custom handler to be called when done */
     void setOnDoneHandler(OnDoneHandler handler);
 
+    /** Exception set on fail */
+    std::exception_ptr exception();
+
+    /** Identifier for debugging */
     const char* tag();
 
+    /** Sets an identifier for debugging */
     void setTag(const std::string& tag);
 
+    /**
+     * Associate some custom data with this awaitable
+     *
+     * @param userData       user data
+     * @param takeOwnership  whether the awaitable should delete userData when destroyed
+     */
     template<typename T>
     void bindUserData(T *userData, bool takeOwnership = true);
 
+    /** Access user data by reference */
     template<typename T>
     T& userData();
 
+    /** Access user data */
     template<typename T>
     T* userDataPtr();
 
 protected:
+    /** Protected constructor */
     Awaitable();
 
+    /**
+     * To be called on completion; yields to awaiting context if any.
+     *
+     * Must be called from main context or bound context.
+     */
     void complete();
 
+    /**
+     * To be called on fail; throws exception on awaiting context if any.
+     *
+     * Must be called from main context or bound context.
+     */
     void fail(std::exception_ptr eptr);
 
     std::string mTag;
@@ -138,42 +230,82 @@ private:
 // helpers
 //
 
+/**
+ * Schedules a function to run asynchronously
+ * @param   tag        awaitable tag
+ * @param   func       coroutine function
+ * @param   stackSize  size of stack to allocate for coroutine
+ * @return  an awaitable for managing the asyncronous operation
+ *
+ * This function prepares func to run as a coroutine. It allocates a StackContext
+ * and returns an Awaitable hooked up to the coroutine. By using startAsync() you
+ * never need to deal with StackContext.
+ *
+ * Uncaught exceptions from func -- except for ForcedUnwind -- will pop out on awaiting
+ * context.
+ *
+ * If you delete the Awaitable while the func is running (i.e. while it is awaiting
+ * some suboperation), the coroutine will resume with a ForcedUnwind exception.
+ * It's expected func will exit immediately upon ForcedUnwind, make sure not to ignore
+ * it in a catch (...) handler.
+ *
+ */
 AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, size_t stackSize = StackContext::defaultStackSize());
 
+/** Returns an awaitable that will complete after delay milliseconds */
 AwaitableHandle asyncDelay(long delay);
 
-// Selectors are used by awaitAll/awaitAny to extract Awaitables from Collection.
-// You can define your own overloads.
 
+/**
+ * @name Awaitable selectors
+ *
+ * Attribute shims that are used by awaitAll() / awaitAny() to extract Awaitables from Collection. You can define your own overloads.
+ */
+///@{
+
+/** select Awaitable from an Awaitable */
 inline Awaitable* selectAwaitable(Awaitable* element)
 {
     return element;
 }
 
+/** select Awaitable from an AwaitableHandle */
 inline Awaitable* selectAwaitable(AwaitableHandle& element)
 {
     return element.get();
 }
 
+/** select Awaitable from an AwaitableHandle */
 inline Awaitable* selectAwaitable(AwaitableHandle *element)
 {
     return element->get();
 }
 
+/** select Awaitable from a std::pair */
 template <typename First, typename Second>
 Awaitable* selectAwaitable(std::pair<First, Second>& element)
 {
     return selectAwaitable(element.first);
 }
 
+/** select Awaitable from any structure with a field named awaitable */
 template <typename T>
 Awaitable* selectAwaitable(T& element)
 {
     return selectAwaitable(element.awaitable);
 }
 
+///@}
+
 // combinators
 
+/**
+ * Yield until all awaitables have completed or one of them fails
+ * @param awaitables  a collection rom which awaitables can be selected
+ *
+ * Equivalent to calling await() in sequence for each member of the collection.
+ * If any awaitable fails the exception propagates to caller.
+ */
 template <typename Collection>
 void awaitAll(Collection& awaitables)
 {
@@ -189,6 +321,14 @@ void awaitAll(Collection& awaitables)
     }
 }
 
+/**
+ * Yield until any of the awaitables has completed or failed
+ * @param awaitables  a collection from which awaitables can be selected
+ * @return  iterator to done awaitable
+ *
+ * Note: If an awaitable fails, the exception is not propagated. You can
+ *       trigger it explicitly by awaiting on returned iterator.
+ */
 template <typename Collection>
 typename Collection::iterator awaitAny(Collection& awaitables)
 {
@@ -201,7 +341,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         if (awt == nullptr) {
             continue;
         }
-        if (awt->didComplete()) {
+        if (awt->isDone()) {
             return it;
         }
         havePendingAwts = true;
@@ -242,6 +382,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
     return completedPos;
 }
 
+/** Compose a collection of awaitables, awaits for all to complete */
 template <typename Collection>
 AwaitableHandle asyncAll(Collection& awaitables)
 {
@@ -250,6 +391,7 @@ AwaitableHandle asyncAll(Collection& awaitables)
     });
 }
 
+/** Compose a collection of awaitables, awaits for any to complete */
 template <typename Collection>
 AwaitableHandle asyncAny(Collection& awaitables, typename Collection::iterator& pos)
 {
@@ -264,6 +406,7 @@ AwaitableHandle asyncAny(Collection& awaitables, typename Collection::iterator& 
 
 // convenience overloads
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(Awaitable *awt1, Awaitable *awt2)
 {
     ut_assert_(awt1 && awt2);
@@ -272,6 +415,7 @@ inline void awaitAll(Awaitable *awt1, Awaitable *awt2)
     awaitAll(awts);
 }
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3)
 {
     ut_assert_(awt1 && awt2 && awt3);
@@ -280,6 +424,7 @@ inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3)
     awaitAll(awts);
 }
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4)
 {
     ut_assert_(awt1 && awt2 && awt3 && awt4);
@@ -288,6 +433,7 @@ inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitabl
     awaitAll(awts);
 }
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4, Awaitable *awt5)
 {
     ut_assert_(awt1 && awt2 && awt3 && awt4 && awt5);
@@ -296,26 +442,31 @@ inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitabl
     awaitAll(awts);
 }
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2)
 {
     return awaitAll(awt1.get(), awt2.get());
 }
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3)
 {
     return awaitAll(awt1.get(), awt2.get(), awt3.get());
 }
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4)
 {
     return awaitAll(awt1.get(), awt2.get(), awt3.get(), awt4.get());
 }
 
+/** Yield until all awaitables have completed or one of them fails */
 inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4, AwaitableHandle& awt5)
 {
     return awaitAll(awt1.get(), awt2.get(), awt3.get(), awt4.get(), awt5.get());
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2)
 {
     ut_assert_(awt1 && awt2);
@@ -324,6 +475,7 @@ inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2)
     return *awaitAny(awts);
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3)
 {
     ut_assert_(awt1 && awt2 && awt3);
@@ -332,6 +484,7 @@ inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3)
     return *awaitAny(awts);
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4)
 {
     ut_assert_(awt1 && awt2 && awt3 && awt4);
@@ -340,6 +493,7 @@ inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Aw
     return *awaitAny(awts);
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitable *awt4, Awaitable *awt5)
 {
     ut_assert_(awt1 && awt2 && awt3 && awt4 && awt5);
@@ -348,6 +502,7 @@ inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Aw
     return *awaitAny(awts);
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2)
 {
     ut_assert_(awt1 && awt2);
@@ -356,6 +511,7 @@ inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2)
     return **awaitAny(awts);
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3)
 {
     ut_assert_(awt1 && awt2 && awt3);
@@ -364,6 +520,7 @@ inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, A
     return **awaitAny(awts);
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4)
 {
     ut_assert_(awt1 && awt2 && awt3 && awt4);
@@ -372,6 +529,7 @@ inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, A
     return **awaitAny(awts);
 }
 
+/** Yield until any of the awaitables has completed or failed */
 inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4, AwaitableHandle& awt5)
 {
     ut_assert_(awt1 && awt2 && awt3 && awt4 && awt5);
@@ -380,13 +538,11 @@ inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, A
     return **awaitAny(awts);
 }
 
-//
-// Completable - exposes complete/fail
-//
-
+/** Exposes complete / fail */
 class Completable : public Awaitable
 {
 public:
+    // Default constructor
     Completable()
         : mTicket(0)
     {
@@ -400,6 +556,12 @@ public:
         }
     }
 
+
+    /**
+     * To be called on completion; yields to awaiting context if any
+     *
+     * Must be called from main context or bound context.
+     */
     void complete() // not virtual
     {
         // callable only from main context
@@ -410,6 +572,11 @@ public:
         Awaitable::complete();
     }
 
+    /**
+     * To be called on fail; throws exception on awaiting context if any
+     *
+     * Must be called from main context or bound context.
+     */
     void fail(std::exception_ptr eptr)  // not virtual
     {
         // callable only from main context
@@ -420,6 +587,9 @@ public:
         Awaitable::fail(eptr);
     }
 
+    /**
+     * Schedules complete on main context. May be called from any context.
+     */
     void scheduleComplete()
     {
         // callable from any stack context
@@ -432,6 +602,9 @@ public:
         }
     }
 
+    /**
+     * Schedules fail on main context. May be called from any context.
+     */
     void scheduleFail(std::exception_ptr eptr)
     {
         // callable from any stack context
@@ -455,7 +628,9 @@ private:
 template<typename T>
 void Awaitable::bindUserData(T *userData, bool takeOwnership)
 {
-    ut_assert_(mUserData == nullptr);
+    if (mUserDataDeleter) {
+        mUserDataDeleter();
+    }
 
     mUserData = userData;
 

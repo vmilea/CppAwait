@@ -210,6 +210,11 @@ void Awaitable::setOnDoneHandler(OnDoneHandler handler)
     mDoneHandler = handler;
 }
 
+std::exception_ptr Awaitable::exception()
+{
+    return mExceptionPtr;
+}
+
 const char* Awaitable::tag()
 {
     return mTag.c_str();

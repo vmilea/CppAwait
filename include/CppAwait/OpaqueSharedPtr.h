@@ -14,25 +14,41 @@
 * limitations under the License.
 */
 
+/**
+ * @file  OpaqueSharedPtr.h
+ *
+ * Declares the OpaqueSharedPtr class.
+ *
+ */
+
 #pragma once
 
-#include "../Config.h"
+#include "Config.h"
 #include <cstdio>
 #include <memory>
 #include <functional>
 
 namespace ut {
 
+
+/**
+ * Handle to a shared_ptr with type erased
+ *
+ * OpaqueSharedPtr keeps some abstract resource alive until you no longer need it.
+ */
 class OpaqueSharedPtr
 {
 public:
+    /** Create an opaque reference from a regular shared_ptr */
     template <typename T>
     OpaqueSharedPtr(const std::shared_ptr<T>& ref)
         : mHolder(new Holder<T>(ref)) { }
 
+    /** Copy constructor */
     OpaqueSharedPtr(const OpaqueSharedPtr& other)
         : mHolder(other.mHolder->clone()) { }
 
+    /** Copy assignment */
     OpaqueSharedPtr& operator=(const OpaqueSharedPtr& other)
     {
         if (this != &other) {
@@ -42,9 +58,11 @@ public:
         return *this;
     }
 
+    /** Move constructor */
     OpaqueSharedPtr(OpaqueSharedPtr&& other)
         : mHolder(std::move(other.mHolder)) { }
 
+    /** Move assignment */
     OpaqueSharedPtr& operator=(OpaqueSharedPtr&& other)
     {
         if (this != &other) {
@@ -54,11 +72,13 @@ public:
         return *this;
     }
 
+    /** Clear reference */
     void clear()
     {
         mHolder = nullptr;
     }
 
+    /** Underlying shared_ptr use count */
     long useCount() const
     {
         return mHolder->useCount();
@@ -74,7 +94,7 @@ private:
 
         virtual long useCount() const = 0;
     };
-    
+
     template <typename T>
     class Holder : public HolderBase
     {

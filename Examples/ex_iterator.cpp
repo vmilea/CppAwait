@@ -16,7 +16,7 @@
 
 #include "ExUtil.h"
 #include <CppAwait/StackContext.h>
-#include <CppAwait/YieldCollection.h>
+#include <CppAwait/YieldSequence.h>
 #include <array>
 
 //
@@ -43,8 +43,8 @@ void ex_iterator()
         filteredIterator(digits, [](int value) { return value % 2 == 1; });
     };
 
-    ut::YieldCollection<int> oddDigits(coOddDigits);
-    
+    ut::YieldSequence<int> oddDigits(coOddDigits);
+
     foreach_(int value, oddDigits) {
         printf ("%d\n", value);
     }

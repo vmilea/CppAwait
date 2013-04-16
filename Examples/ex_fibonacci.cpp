@@ -16,7 +16,7 @@
 
 #include "ExUtil.h"
 #include <CppAwait/StackContext.h>
-#include <CppAwait/YieldCollection.h>
+#include <CppAwait/YieldSequence.h>
 #include <array>
 
 //
@@ -62,9 +62,9 @@ void ex_fibonacci()
     }
 
     {
-        // YieldCollection makes it easier to iterate over generators
+        // YieldSequence makes it easier to iterate over generators
 
-        ut::YieldCollection<long> fibos(&coFiboGenerator);
+        ut::YieldSequence<long> fibos(&coFiboGenerator);
 
         int i = 0;
         foreach_(long value, fibos) {

@@ -85,18 +85,6 @@ StackContext* currentContext()
 }
 
 
-// types
-
-struct YieldValue
-{
-    YieldType type;
-    void *value;
-
-    YieldValue(YieldType type, void *value)
-        : type(type), value(value) { }
-};
-
-
 //
 // StackPool
 //
@@ -320,11 +308,6 @@ StackContext& StackContext::operator=(StackContext&& other)
     }
 
     return *this;
-}
-
-StackContext::operator bool()
-{
-    return mImpl ? true : false;
 }
 
 const char* StackContext::tag()

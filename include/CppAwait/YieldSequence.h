@@ -14,6 +14,13 @@
 * limitations under the License.
 */
 
+/**
+ * @file  YieldSequence.h
+ *
+ * Declares a utility class for iterating over generators
+ *
+ */
+
 #pragma once
 
 #include "Config.h"
@@ -21,84 +28,102 @@
 #include "StackContext.h"
 #include <iterator>
 
-#define YC_DONE ((void *) -1)
+#define YS_DONE ((void *) -1)
 
 namespace ut {
 
-//
-// YieldCollection (for easier iteration over generators)
-//
-
+/**
+ * Adapts a generator coroutine for iteration
+ */
 template <typename T>
-class YieldCollection
+class YieldSequence
 {
 public:
     class Iterator;
     typedef Iterator iterator;
 
-    YieldCollection(StackContext::Coroutine coroutine)
-        : mContext("YieldCollection")
+    /**
+     * Wraps coroutine into an iterable sequence
+     *
+     * @param coroutine   Generator coroutine. May yield pointers to T or an exception.
+     */
+    YieldSequence(StackContext::Coroutine coroutine)
+        : mContext("YieldSequence")
         , mCurrentValue(nullptr)
     {
         mContext.start([=](void *startValue) {
             coroutine(startValue);
-            mCurrentValue = YC_DONE;
+            mCurrentValue = YS_DONE;
         });
     }
 
-    ~YieldCollection()
+    ~YieldSequence()
     {
-        if (mCurrentValue != YC_DONE) {
+        if (mCurrentValue != YS_DONE) {
             ut_assert_(mContext.isRunning());
             forceUnwind(&mContext);
         }
     }
 
-    YieldCollection(YieldCollection&& other)
+    /** Move constructor */
+    YieldSequence(YieldSequence&& other)
         : mContext(std::move(other.mContext))
         , mCurrentValue(other.mCurrentValue)
     {
-        other.mCurrentValue = YC_DONE;
+        other.mCurrentValue = YS_DONE;
     }
 
-    YieldCollection& operator=(YieldCollection&& other)
+    /** Move assignment */
+    YieldSequence& operator=(YieldSequence&& other)
     {
         if (this != &other) {
             mContext = std::move(other.mContext);
             mCurrentValue = other.mCurrentValue;
-            other.mCurrentValue = YC_DONE;
+            other.mCurrentValue = YS_DONE;
         }
 
         return *this;
     }
 
+    /**
+     * Returns a forward iterator
+     *
+     * May only be called once. Traversing sequence multiple times is not supported.
+     */
     iterator begin()
     {
-        ut_assert_(mCurrentValue != YC_DONE);
+        ut_assert_(mCurrentValue != YS_DONE);
 
         Iterator it(this);
         return ++it;
     }
 
+    /** Returns sequence end */
     iterator end()
     {
         return Iterator(nullptr);
     }
 
+    /**
+     * Forward iterator
+     */
     class Iterator
     {
     public:
-        typedef std::input_iterator_tag iterator_category;
+        typedef std::forward_iterator_tag iterator_category;
         typedef T value_type;
         typedef ptrdiff_t difference_type;
         typedef T* pointer;
         typedef T& reference;
 
+        Iterator()
+            : mContainer(nullptr) { }
+
         T& operator*()
         {
             ut_assert_(mContainer != nullptr);
             ut_assert_(mContainer->mCurrentValue != nullptr);
-            ut_assert_(mContainer->mCurrentValue != YC_DONE);
+            ut_assert_(mContainer->mCurrentValue != YS_DONE);
 
             return *((T *) mContainer->mCurrentValue);
         }
@@ -106,22 +131,22 @@ public:
         Iterator& operator++()
         {
             ut_assert_(mContainer != nullptr);
-            ut_assert_(mContainer->mCurrentValue != YC_DONE);
+            ut_assert_(mContainer->mCurrentValue != YS_DONE);
 
             try {
                 void *value = yieldTo(&mContainer->mContext);
 
-                if (mContainer->mCurrentValue == YC_DONE) { // coroutine has finished
+                if (mContainer->mCurrentValue == YS_DONE) { // coroutine has finished
                     mContainer = nullptr;
                 } else { // coroutine has yielded
                     ut_assert_(value != nullptr && "you may not yield nullptr from coroutine");
                     mContainer->mCurrentValue = value;
                 }
             } catch (const ForcedUnwind&) { // coroutine interrupted, swallow exception
-                mContainer->mCurrentValue = YC_DONE;
+                mContainer->mCurrentValue = YS_DONE;
                 mContainer = nullptr;
             } catch (...) { // propagate other exceptions thrown by coroutine
-                mContainer->mCurrentValue = YC_DONE;
+                mContainer->mCurrentValue = YS_DONE;
                 mContainer = nullptr;
                 throw;
             }
@@ -140,12 +165,12 @@ public:
         }
 
     private:
-        Iterator(YieldCollection<T> *container)
+        Iterator(YieldSequence<T> *container)
             : mContainer(container) { }
 
-        YieldCollection *mContainer;
+        YieldSequence *mContainer;
 
-        friend class YieldCollection<T>;
+        friend class YieldSequence<T>;
     };
 
 private:
