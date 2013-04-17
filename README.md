@@ -74,7 +74,7 @@ Another snippet. Download and archive some files, allowing for archival while ne
         awtArchive = asyncArchive(std::move(document));
 
 
-There are several [examples](/vmilea/CppAwait/tree/master/Examples) included. See [stock client](/vmilea/CppAwait/tree/master/Examples/ex_stockClient.cpp) for a direct comparison between classic async and the await pattern.
+There are several [examples](/Examples) included. See [stock client](/Examples/ex_stockClient.cpp) for a direct comparison between classic async and the await pattern.
 
 
 Features
