@@ -1,79 +1,106 @@
 CppAwait
 ========
 
-CppAwait is a portable library that brings the await operator from C# 5 to C++. It uses stackful coroutines (_Boost.Context_) instead of compiler magic to get the same job done.
+CppAwait is a C++ library that enables writing asynchronous code in a natural (sequential) form.
+
+It solves the code flow inversion typical of asynchronous APIs. So -- instead of chaining callbacks, dealing with state and error codes -- you can use plain conditionals, loops and exception handlers to express your asynchronous algorithm.
+
+The goal: make it easier to write responsive applications that have to deal with laggy network & file I/O.
 
 
+How it works
+============
 
-What is await?
-==============
+CppAwait provides an _await_ construct similar to the one from C# 5 (see [MSDN](http://msdn.microsoft.com/en-us/library/hh191443.aspx)). Upon reaching an _await_ expression the C# compiler automatically transforms the rest of the method into a task continuation. In C++ a similar effect can be achieved through coroutines (which CppAwait implements on top of Boost.Context). Calling _await()_ will suspend a coroutine until the associated task completes. The program is free to do other work while coroutine is suspended.
 
-In a nutshell, it's a way to compose asynchronous operations in sequential style (as opposed to continuation passing style).
-
-Any algorithm that involves blocking operations can be turned asynchronous while keeping original control flow. This approach is well suited for writing responsive applications that have to deal with laggy network & file I/O.
-
-A more in depth introduction is available on [MSDN](http://msdn.microsoft.com/en-us/library/hh191443.aspx).
+In order for the library to manage coroutines it needs a Scheduler. This must be implemented by the program via a run loop.
 
 
+Here is a snippet showing typical library use. It connects and transfers some data to a TCP server:
 
-How does it work in practice?
-=============================
+    ut::AwaitableHandle awt;
 
-Download and archive some files, allowing for archival while next download is in progress:
+    tcp::resolver::iterator endpoints; // [out]
+    awt = ut::asio::asyncResolve(resolver, query, endpoints);
+    awt->await();
 
+    for (auto it = endpoints; it != tcp::resolver::iterator(); ++it) {
+        tcp::endpoint ep = *it;
+        awt = ut::asio::asyncConnect(socket, ep);
+
+        try {
+            awt->await();
+            break; // connected
+        } catch (const std::exception&) {
+            // try next endpoint
+        }
+    }
+    if (!socket.is_open()) {
+        throw SocketError("failed to connect socket");
+    }
+
+    // write an HTTP request
+    awt = ut::asio::asyncWrite(socket, request);
+    awt->await();
+
+    // read response
+    awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n"));
+    awt->await();
+
+The _Awaitable_ class is a generic wrapper for asynchronous operations. All asynchronous methods return an _Awaitable_. Its _await()_ method yields control to the main loop until the _Awaitable_ completes or fails, at which point the coroutine resumes. If operation failed the associated exception gets thrown. Note there is no return value -- output parameters such as _endpoints_ must be passed by reference.
+
+_Awaitables_ compose easily, just like regular functions. More complex patterns are supported through _awaitAll()_ / _awaitAny()_.
+
+
+Another snippet. Download and archive some files, allowing for archival while next download is in progress:
 
     std::vector<std::string> urls = { ... };
 
     ut::AwaitableHandle awtArchive;
 
     for (std::string url : urls) {
-        // holds fetched document
+        // [out] holds fetched document
         std::unique_ptr<std::vector<char> > document;
 
         ut::AwaitableHandle awtFetch = asyncFetch(url, &document);
 
         // doesn't block, instead it yields. the coroutine
         // gets resumed when fetch done or on exception.
-        awtFetch.await(); 
+        awtFetch.await();
 
         if (awtArchive) {
             awtArchive.await();
         }
         awtArchive = asyncArchive(std::move(document));
-    }
 
 
-For more, check out the included [examples](/vmilea/CppAwait/tree/master/Examples)!
-
+There are several [examples](/vmilea/CppAwait/tree/master/Examples) included. See [stock client](/vmilea/CppAwait/tree/master/Examples/ex_stockClient.cpp) for a direct comparison between classic async and the await pattern.
 
 
 Features
 ========
 
-- simple, clear code
-
-- coroutines, wrapped generators
+- coroutines, iterable generators
 
 - composable awaitables
 
-- trivial to write custom awaitables
+- support for exceptions
 
-- pluggable into any GUI framework
+- can adapt any asynchronous API
 
-- exception propagation across coroutines
+- experimental Boost.Asio wrappers
+
+- pluggable into any program with a run loop
 
 - good performance with stack pooling
 
-- various logging levels
+- customizable logging
 
 - portable
 
-- debuggable (break into stacks as usual)
 
-
-
-Getting started
-===============
+Installation
+============
 
 1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.52+ with _Boost.Context_ and _Boost.System_ compiled [[*]](#msvc10). Quick guide:
 
@@ -89,7 +116,7 @@ Getting started
    - cmake -G "your-generator" -DBOOST\_INCLUDEDIR="path-to-boost" -DBOOST\_LIBRARYDIR="path-to-boost-libs" "path-to-CppAwait"
    - open solution / make
 
-<a id="msvc10">(*)</a> Visual C++ 2010 doesn't implement the thread library. In this case _Boost.Chrono_ and _Boost.Thread_ are required to compile the examples. 
+<a id="msvc10">(*)</a> Visual C++ 2010 doesn't implement the thread library. In this case _Boost.Chrono_ and _Boost.Thread_ are also required to compile the examples.
 
 
 Portability
@@ -103,19 +130,6 @@ The library is supported on Windows / Linux with any of these compilers:
 Boost.Context includes assembly code for ARM / MIPS / PowerPC32 / PowerPC64 / X86-32 / X86-64.
 
 Porting to additional platforms (e.g. iOS, Android) should be trivial.
-
-
-
-How it works
-============
-
-### TODO
-
-- describe stackful coroutines
-
-- describe how context switches are orchestrated
-
-- describe lifetime of stacks & awaitables
 
 
 
