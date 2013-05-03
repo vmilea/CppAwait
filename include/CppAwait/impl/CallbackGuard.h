@@ -25,46 +25,55 @@ namespace ut {
 // helps ignore callbacks that arrive too late
 //
 
-class CompletionGuard
+class CallbackGuard
 {
 public:
     class Token
     {
     public:
-        Token()
-            : mIsBlocked(false) { }
+        Token(Token&& other)
+            : mIsBlocked(std::move(other.mIsBlocked)) { }
+
+        Token& operator=(Token&& other)
+        {
+            mIsBlocked = std::move(other.mIsBlocked);
+            return *this;
+        }
 
         bool isBlocked() const
         {
-            return mIsBlocked;
+            return *mIsBlocked;
         }
 
     private:
-        bool mIsBlocked;
+        explicit Token(std::shared_ptr<bool> isBlocked)
+            : mIsBlocked(isBlocked) { }
 
-        friend class CompletionGuard;
+        std::shared_ptr<bool> mIsBlocked;
+
+        friend class CallbackGuard;
     };
 
-    CompletionGuard()
-        : mToken(std::make_shared<Token>()) { }
+    CallbackGuard()
+        : mIsBlocked(std::make_shared<bool>(false)) { }
 
-    ~CompletionGuard()
+    ~CallbackGuard()
     {
         block();
     }
 
-    std::shared_ptr<const Token> getToken() const
+    Token getToken() const
     {
-        return mToken;
+        return Token(mIsBlocked);
     }
 
     void block()
     {
-        mToken->mIsBlocked = true;
+        *mIsBlocked = true;
     }
 
 private:
-    std::shared_ptr<Token> mToken;
+    std::shared_ptr<bool> mIsBlocked;
 };
 
 }

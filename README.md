@@ -125,7 +125,7 @@ Portability
 The library is supported on Windows / Linux with any of these compilers:
 
    - Visual C++ 2010 or later
-   - GCC 4.6 or later
+   - GCC 4.6.2 or later
 
 Boost.Context includes assembly code for ARM / MIPS / PowerPC32 / PowerPC64 / X86-32 / X86-64.
 

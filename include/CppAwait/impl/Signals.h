@@ -17,9 +17,15 @@
 #pragma once
 
 #include "../Config.h"
-#include "Assert.h"
-#include "Log.h"
-#include "Foreach.h"
-#include "StringUtil.h"
-#include "CallbackGuard.h"
-#include "Compatibility.h"
+#include <boost/config.hpp>
+
+#ifdef BOOST_MSVC
+# pragma warning(push)
+# pragma warning(disable : 4512) // assignment operator could not be generated
+#endif
+
+#include <boost/signals2.hpp>
+
+#ifdef BOOST_MSVC
+# pragma warning(pop)
+#endif

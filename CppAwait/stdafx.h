@@ -1,5 +1,6 @@
 #include "ConfigPrivate.h"
 #include <CppAwait/Config.h>
+#include <CppAwait/impl/Signals.h>
 #include <string>
 #include <vector>
 #include <memory>

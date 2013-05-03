@@ -26,6 +26,8 @@
 #include "Config.h"
 #include "StackContext.h"
 #include "impl/Assert.h"
+#include "impl/Signals.h"
+#include "impl/CallbackGuard.h"
 #include <cstdio>
 #include <cstdarg>
 #include <string>
@@ -124,8 +126,8 @@ public:
     /** Coroutine signature required by startAsync() */
     typedef std::function<void (Awaitable *awtSelf)> AsyncFunc;
 
-    /** Signature for a custom handler to be called after complete / fail */
-    typedef std::function<void (Awaitable *awt)> OnDoneHandler;
+    /** Signal emitted on complete / fail */
+    typedef boost::signals2::signal<void (Awaitable *awt)> OnDoneSignal;
 
     /** Destructor */
     virtual ~Awaitable();
@@ -157,8 +159,8 @@ public:
     /** True if completed or failed */
     bool isDone();
 
-    /** Set a custom handler to be called when done */
-    void setOnDoneHandler(OnDoneHandler handler);
+    /** Add a custom handler to be called when done */
+    boost::signals2::connection connectToDone(const OnDoneSignal::slot_type& slot);
 
     /** Exception set on fail */
     std::exception_ptr exception();
@@ -210,7 +212,7 @@ protected:
     Ticket mStartTicket;
     bool mDidComplete;
     std::exception_ptr mExceptionPtr;
-    OnDoneHandler mDoneHandler;
+    OnDoneSignal mOnDone;
 
     void *mUserData;
     Runnable mUserDataDeleter;
@@ -324,7 +326,7 @@ void awaitAll(Collection& awaitables)
 /**
  * Yield until any of the awaitables has completed or failed
  * @param awaitables  a collection from which awaitables can be selected
- * @return  iterator to done awaitable
+ * @return  iterator to an awaitable that is done
  *
  * Note: If an awaitable fails, the exception is not propagated. You can
  *       trigger it explicitly by awaiting on returned iterator.
@@ -542,11 +544,99 @@ inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, A
 class Completable : public Awaitable
 {
 public:
-    // Default constructor
+    /* Helps wrap asynchronous APIs by hooking the Completable to raw callback */
+    template <typename F>
+    class CallbackWrapper
+    {
+    public:
+        CallbackWrapper(ut::Completable *completable, F&& callback)
+            : mCompletable(completable)
+            , mGuardToken(mCompletable->getGuardToken())
+            , mCallback(std::move(callback)) { }
+
+        CallbackWrapper(CallbackWrapper<F>&& other)
+            : mCompletable(other.mCompletable)
+            , mGuardToken(std::move(other.mToken))
+            , mCallback(std::move(other.mFunc))
+        {
+            other.mCompletable = nullptr;
+        }
+
+        CallbackWrapper& operator=(CallbackWrapper<F>&& other)
+        {
+            mCompletable = other.mCompletable;
+            other.mCompletable = nullptr;
+            mGuardToken = std::move(other.mToken);
+            mCallback = std::move(other.mCallback);
+
+            return *this;
+        }
+
+    #define UT_CALLBACK_WRAPPER_IMPL(...) \
+        if (!mGuardToken.isBlocked()) { \
+            std::exception_ptr eptr = mCallback(__VA_ARGS__); \
+            \
+            if (eptr == std::exception_ptr()) { \
+                mCompletable->complete(); \
+            } else { \
+                mCompletable->fail(eptr); \
+            } \
+        }
+
+        void operator()()
+        {
+            UT_CALLBACK_WRAPPER_IMPL();
+        }
+
+        template <typename Arg1>
+        void operator()(Arg1&& arg1)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(arg1);
+        }
+
+        template <typename Arg1, typename Arg2>
+        void operator()(Arg1&& arg1, Arg2&& arg2)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
+        }
+
+        template <typename Arg1, typename Arg2, typename Arg3>
+        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3));
+        }
+
+        template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3, Arg4&& arg4)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3),
+                                     std::forward<Arg4>(arg4));
+        }
+
+        template <typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
+        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3, Arg4&& arg4, Arg5&& arg5)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3),
+                                     std::forward<Arg4>(arg4), std::forward<Arg5>(arg5));
+        }
+
+    private:
+        CallbackWrapper();
+
+        ut::Completable *mCompletable;
+        CallbackGuard::Token mGuardToken;
+        F mCallback;
+    };
+
+    /** Default constructor */
     Completable()
+        : mTicket(0) { }
+
+    /** Create a named completable */
+    Completable(const std::string& tag)
         : mTicket(0)
     {
-        setTag("Completable");
+        setTag(tag);
     }
 
     ~Completable()
@@ -555,7 +645,6 @@ public:
             cancelScheduled(mTicket);
         }
     }
-
 
     /**
      * To be called on completion; yields to awaiting context if any
@@ -569,6 +658,7 @@ public:
         ut_assert_(mTicket == 0);
         ut_assert_(currentContext() == mainContext());
 
+        mGuard.block();
         Awaitable::complete();
     }
 
@@ -584,6 +674,7 @@ public:
         ut_assert_(mTicket == 0);
         ut_assert_(currentContext() == mainContext());
 
+        mGuard.block();
         Awaitable::fail(eptr);
     }
 
@@ -595,6 +686,8 @@ public:
         // callable from any stack context
 
         if (mTicket == 0) {
+            mGuard.block();
+
             mTicket = schedule([this]() {
                 mTicket = 0;
                 complete();
@@ -610,6 +703,8 @@ public:
         // callable from any stack context
 
         if (mTicket == 0) {
+            mGuard.block();
+
             mTicket = schedule([this, eptr]() {
                 mTicket = 0;
                 fail(eptr);
@@ -617,7 +712,40 @@ public:
         }
     }
 
+    /**
+     * Returns a token that may be used to check whether the Callable is done
+     *
+     * The token gets blocked on complete / fail. It is still readable after
+     * destroying Callable.
+     *
+     * Guard tokens help ignore late callbacks, so you don't try to complete
+     * a Callable that is no longer valid. Note, wrap() already handles this
+     * and is simpler to use.
+     */
+    CallbackGuard::Token getGuardToken()
+    {
+        return mGuard.getToken();
+    }
+
+    /**
+     * Wraps a callback function
+     *
+     * The wrapper executes func and immediately finishes Callable. Nothing
+     * happens if the wrapper runs after Callable is done (and possibly
+     * destroyed).
+     *
+     * @param  func  callback to wrap. Must return a std::exception_ptr
+     *               which triggers Completable to complete / fail.
+     * @return wrapped func
+     */
+    template <typename F>
+    CallbackWrapper<F> wrap(F func)
+    {
+        return CallbackWrapper<F>(this, std::move(func));
+    }
+
 private:
+    CallbackGuard mGuard;
     Ticket mTicket;
 };
 

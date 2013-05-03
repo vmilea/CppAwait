@@ -37,7 +37,7 @@ static ut::AwaitableHandle asyncMySimpleDelay(long delay)
     });
 
     // cancel ticket if interrupted
-    awt->setOnDoneHandler([ticket](ut::Awaitable *awt) {
+    awt->connectToDone([ticket](ut::Awaitable *awt) {
         if (awt->didFail()) {
             ut::cancelScheduled(ticket);
         }

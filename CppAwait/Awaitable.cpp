@@ -169,9 +169,7 @@ void Awaitable::complete()
     ut_assert_(!didFail() && "can't complete, already failed");
     mDidComplete = true;
 
-    if (mDoneHandler) {
-        mDoneHandler(this);
-    }
+    mOnDone(this);
 
     if (mAwaitingContext != nullptr) {
         if (currentContext() != mainContext() && currentContext() != mBoundContext) {
@@ -191,9 +189,7 @@ void Awaitable::fail(std::exception_ptr eptr)
     ut_assert_(!(eptr == std::exception_ptr()) && "invalid exception_ptr");
     mExceptionPtr = eptr;
 
-    if (mDoneHandler) {
-        mDoneHandler(this);
-    }
+    mOnDone(this);
 
     if (mAwaitingContext != nullptr) {
         if (currentContext() != mainContext() && currentContext() != mBoundContext) {
@@ -204,10 +200,9 @@ void Awaitable::fail(std::exception_ptr eptr)
     }
 }
 
-void Awaitable::setOnDoneHandler(OnDoneHandler handler)
+boost::signals2::connection Awaitable::connectToDone(const OnDoneSignal::slot_type& slot)
 {
-    ut_assert_(!mDoneHandler);
-    mDoneHandler = handler;
+    return mOnDone.connect(slot);
 }
 
 std::exception_ptr Awaitable::exception()
@@ -325,7 +320,7 @@ AwaitableHandle asyncDelay(long delay)
         awt->complete();
     });
 
-    awt->setOnDoneHandler([ticket](Awaitable *awt) {
+    awt->connectToDone([ticket](Awaitable *awt) {
         if (awt->didFail()) {
             cancelScheduled(ticket);
         }
