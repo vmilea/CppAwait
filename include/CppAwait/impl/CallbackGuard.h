@@ -31,6 +31,15 @@ public:
     class Token
     {
     public:
+        Token(const Token& other)
+            : mIsBlocked(other.mIsBlocked) { }
+
+        Token& operator=(const Token& other)
+        {
+            mIsBlocked = other.mIsBlocked;
+            return *this;
+        }
+
         Token(Token&& other)
             : mIsBlocked(std::move(other.mIsBlocked)) { }
 

@@ -64,7 +64,7 @@ inline AwaitableHandle asyncResolve(Resolver& resolver, const typename Resolver:
     auto awt = new ut::Completable("asyncResolve");
 
     resolver.async_resolve(query,
-                           awt->wrap([&](const boost::system::error_code& ec, ResolverIterator it) {
+                           awt->wrap([&](const boost::system::error_code& ec, ResolverIterator it) -> std::exception_ptr {
         outEndpoints = it;
         return eptr(ec);
     }));
@@ -79,7 +79,7 @@ inline AwaitableHandle asyncConnect(Socket& socket, const typename Socket::endpo
     auto awt = new ut::Completable("asyncConnect");
 
     socket.async_connect(endpoint,
-                         awt->wrap([](const boost::system::error_code& ec) {
+                         awt->wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
         return eptr(ec);
     }));
 
@@ -93,7 +93,7 @@ inline AwaitableHandle asyncConnect(Socket& socket, Iterator begin, Iterator& ou
     auto awt = new ut::Completable("asyncConnect");
 
     boost::asio::async_connect(socket, begin,
-                               awt->wrap([&](const boost::system::error_code& ec, Iterator iterator) {
+                               awt->wrap([&](const boost::system::error_code& ec, Iterator iterator) -> std::exception_ptr {
         outConnected = iterator;
         return eptr(ec);
     }));
@@ -108,7 +108,7 @@ inline AwaitableHandle asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocke
     auto awt = new ut::Completable("asyncAccept");
 
     acceptor.async_accept(*peer,
-                          awt->wrap([peer](const boost::system::error_code& ec) {
+                          awt->wrap([peer](const boost::system::error_code& ec) -> std::exception_ptr {
         return eptr(ec);
     }));
 
@@ -135,7 +135,7 @@ inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, const ConstBufferSeq
     auto awt = new ut::Completable("asyncWrite");
 
     boost::asio::async_write(stream, buffers, completionCondition,
-                             awt->wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+                             awt->wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
@@ -162,7 +162,7 @@ inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boos
     auto awt = new ut::Completable("asyncWrite");
 
     boost::asio::async_write(stream, *buffer, completionCondition,
-                             awt->wrap([&, buffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+                             awt->wrap([&, buffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
@@ -184,7 +184,7 @@ inline AwaitableHandle asyncRead(AsyncReadStream& stream, const MutableBufferSeq
     auto awt = new ut::Completable("asyncRead");
 
     boost::asio::async_read(stream, outBuffers, completionCondition,
-                            awt->wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+                            awt->wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
@@ -211,7 +211,7 @@ inline AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<boost:
     auto awt = new ut::Completable("asyncRead");
 
     boost::asio::async_read(stream, *outBuffer, completionCondition,
-                            awt->wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+                            awt->wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
@@ -232,7 +232,7 @@ inline AwaitableHandle asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<b
     auto awt = new ut::Completable("asyncReadUntil");
 
     boost::asio::async_read_until(stream, *outBuffer, condition,
-                                  awt->wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+                                  awt->wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));

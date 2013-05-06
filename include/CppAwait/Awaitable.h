@@ -554,10 +554,24 @@ public:
             , mGuardToken(mCompletable->getGuardToken())
             , mCallback(std::move(callback)) { }
 
+        CallbackWrapper(const CallbackWrapper<F>& other)
+            : mCompletable(other.mCompletable)
+            , mGuardToken(other.mGuardToken)
+            , mCallback(other.mCallback) { }
+
+        CallbackWrapper& operator=(const CallbackWrapper<F>& other)
+        {
+            mCompletable = other.mCompletable;
+            mGuardToken = other.mGuardToken;
+            mCallback = other.mCallback;
+
+            return *this;
+        }
+
         CallbackWrapper(CallbackWrapper<F>&& other)
             : mCompletable(other.mCompletable)
-            , mGuardToken(std::move(other.mToken))
-            , mCallback(std::move(other.mFunc))
+            , mGuardToken(std::move(other.mGuardToken))
+            , mCallback(std::move(other.mCallback))
         {
             other.mCompletable = nullptr;
         }
@@ -566,7 +580,7 @@ public:
         {
             mCompletable = other.mCompletable;
             other.mCompletable = nullptr;
-            mGuardToken = std::move(other.mToken);
+            mGuardToken = std::move(other.mGuardToken);
             mCallback = std::move(other.mCallback);
 
             return *this;
@@ -621,8 +635,6 @@ public:
         }
 
     private:
-        CallbackWrapper();
-
         ut::Completable *mCompletable;
         CallbackGuard::Token mGuardToken;
         F mCallback;
