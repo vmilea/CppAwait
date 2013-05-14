@@ -61,13 +61,6 @@ Awaitable::~Awaitable()
     if (didComplete() || didFail()) {
         ut_assert_(mAwaitingContext == nullptr);
         ut_assert_(mStartTicket == 0);
-
-        if (mBoundContext != nullptr && mBoundContext->isRunning()) {
-            ut_log_debug_("* unwinding bound context '%s'", mBoundContext->tag());
-
-            mBoundContext->setParent(currentContext());
-            yieldTo(mBoundContext); // resume context to unwind stack
-        }
     } else {
         if (mStartTicket != 0) {
             ut_assert_(mAwaitingContext == nullptr);
@@ -76,6 +69,7 @@ Awaitable::~Awaitable()
         }
         if (mAwaitingContext != nullptr) {
             // can't print awaiting context tag since it may have been deleted
+            // (e.g. a persistent Completable may outlive its awaiter)
             ut_log_debug_("* while being awaited");
             mAwaitingContext = nullptr;
         }
@@ -89,7 +83,9 @@ Awaitable::~Awaitable()
 
             ut_assert_(mBoundContext->isRunning());
 
+            // override parent to get back here after unwinding bound context
             mBoundContext->setParent(currentContext());
+            // resume context, force fail() via ForcedUnwind 
             forceUnwind(mBoundContext);
         } else {
             fail(YieldForbidden::ptr());
@@ -252,18 +248,6 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
             func(awt);
 
             ut_log_debug_("* awt '%s' done", awt->tag());
-
-            ut_assert_(!awt->didFail());
-
-            if (!awt->didComplete()) {
-                if (awt->mAwaitingContext != nullptr)  {
-                    // don't yield on complete, instead wait until context fully unwinded
-                    awt->mBoundContext->setParent(awt->mAwaitingContext);
-                    awt->mAwaitingContext = nullptr;
-                }
-
-                awt->complete(); // mAwaitingContext is null, won't yield
-            }
         } catch (const ForcedUnwind&) {
             ut_log_debug_("* awt '%s' done (forced unwind)", awt->tag());
 
@@ -283,26 +267,29 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
             ut_assert_(!(eptr == std::exception_ptr()));
         }
 
-        if (!(eptr == std::exception_ptr())) {
-            ut_assert_(!awt->didFail());
-            ut_assert_(!awt->didComplete());
+        ut_assert_(!awt->didFail());
+        ut_assert_(!awt->didComplete());
 
-            if (awt->mAwaitingContext != nullptr)  {
-                // don't yield on fail, instead wait until context fully unwinded
-                awt->mBoundContext->setParent(awt->mAwaitingContext);
-                awt->mAwaitingContext = nullptr;
-            }
+		if (awt->mAwaitingContext != nullptr) {
+            // wait until context fully unwinded before yielding to awaiting context
+            awt->mBoundContext->setParent(awt->mAwaitingContext);
+            awt->mAwaitingContext = nullptr;
+        }
 
-            awt->fail(eptr);  // mAwaitingContext is null, won't yield
+        if (eptr == std::exception_ptr()) {
+            awt->complete(); // mAwaitingContext is null, won't yield
+        } else {
+            awt->fail(eptr); // mAwaitingContext is null, won't yield
         }
 
         // This function will never throw an exception. Instead, exceptions
-        // are stored in the Awaitable and get rethrown on await().
+        // are stored in the Awaitable and get rethrown by await().
     }, stackSize);
 
     context->setParent(mainContext());
     awt->mBoundContext = context;
 
+    // defer start until current context suspends itself
     awt->mStartTicket = schedule([awt] {
         awt->mStartTicket = 0;
         yieldTo(awt->mBoundContext);
