@@ -28,7 +28,6 @@
 #include "impl/Assert.h"
 #include "impl/Signals.h"
 #include "impl/CallbackGuard.h"
-#include <cstdio>
 #include <cstdarg>
 #include <string>
 #include <memory>
@@ -559,7 +558,7 @@ public:
             , mGuardToken(other.mGuardToken)
             , mCallback(other.mCallback) { }
 
-        CallbackWrapper& operator=(const CallbackWrapper<F>& other)
+        CallbackWrapper<F>& operator=(const CallbackWrapper<F>& other)
         {
             mCompletable = other.mCompletable;
             mGuardToken = other.mGuardToken;
@@ -576,7 +575,7 @@ public:
             other.mCompletable = nullptr;
         }
 
-        CallbackWrapper& operator=(CallbackWrapper<F>&& other)
+        CallbackWrapper<F>& operator=(CallbackWrapper<F>&& other)
         {
             mCompletable = other.mCompletable;
             other.mCompletable = nullptr;
@@ -605,7 +604,7 @@ public:
         template <typename Arg1>
         void operator()(Arg1&& arg1)
         {
-            UT_CALLBACK_WRAPPER_IMPL(arg1);
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1));
         }
 
         template <typename Arg1, typename Arg2>

@@ -24,7 +24,6 @@
 #pragma once
 
 #include "Config.h"
-#include <cstdio>
 #include <memory>
 #include <functional>
 
@@ -39,10 +38,18 @@ namespace ut {
 class OpaqueSharedPtr
 {
 public:
+    /** Create an empty opaque reference */
+    OpaqueSharedPtr() { }
+
     /** Create an opaque reference from a regular shared_ptr */
     template <typename T>
     OpaqueSharedPtr(const std::shared_ptr<T>& ref)
         : mHolder(new Holder<T>(ref)) { }
+
+    /** Create an opaque reference from a regular shared_ptr */
+    template <typename T>
+    OpaqueSharedPtr(std::shared_ptr<T>&& ref)
+        : mHolder(new Holder<T>(std::move(ref))) { }
 
     /** Copy constructor */
     OpaqueSharedPtr(const OpaqueSharedPtr& other)
@@ -73,7 +80,7 @@ public:
     }
 
     /** Clear reference */
-    void clear()
+    void reset()
     {
         mHolder = nullptr;
     }
@@ -82,6 +89,12 @@ public:
     long useCount() const
     {
         return mHolder->useCount();
+    }
+
+    /* Check if an object is being referenced */
+    operator bool()
+    {
+        return mHolder;
     }
 
 private:
@@ -101,6 +114,9 @@ private:
     public:
         Holder(const std::shared_ptr<T>& value)
             : mValue(value) { }
+
+        Holder(std::shared_ptr<T>&& value)
+            : mValue(std::move(value)) { }
 
         Holder* clone() const
         {

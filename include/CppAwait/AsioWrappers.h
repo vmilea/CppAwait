@@ -21,7 +21,6 @@
 #include "OpaqueSharedPtr.h"
 #include "impl/CallbackGuard.h"
 #include <boost/asio.hpp>
-#include <cstdio>
 
 // experimental Boost.Asio wrappers
 
