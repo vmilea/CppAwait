@@ -39,7 +39,7 @@ static ut::AwaitableHandle asyncCountdown()
         timed_mutex mutex;
         condition_variable_any cond;
         bool isInterrupted = false;
-        ut::Ticket completionTicket = 0;
+        ut::Ticket completionTicket;
 
         thread countdownThread([&]() {
             unique_lock<timed_mutex> lock(mutex);
@@ -61,9 +61,9 @@ static ut::AwaitableHandle asyncCountdown()
                 timed_mutex& lambdaMutex = mutex;
 
                 // resume awaitable, yield must be called from main thread
-                completionTicket = ut::schedule([&]() {
+                completionTicket = ut::scheduleWithTicket([&]() {
                     { lock_guard<timed_mutex> _(lambdaMutex);
-                        completionTicket = 0;
+                        completionTicket.reset();
                     }
                     ut::yieldTo(context);
                 });
@@ -71,6 +71,7 @@ static ut::AwaitableHandle asyncCountdown()
         });
 
         try {
+            // suspend until liftoff or abort
             ut::yield();
         } catch (const ut::ForcedUnwind&) {
             printf ("aborting liftoff...\n");
@@ -84,10 +85,8 @@ static ut::AwaitableHandle asyncCountdown()
         countdownThread.join();
         printf ("\njoined countdown thread\n");
 
-        // unlikely case: interrupt was too late to prevent liftoff
-        if (completionTicket != 0) {
-            ut::cancelScheduled(completionTicket);
-        }
+        // It's possible (but unlikely) for the interrupt to arrive too late to abort liftoff.
+        // Ticket acts as a failsafe at scope end, ensuring completion-lambda gets canceled.
     });
 }
 
@@ -147,7 +146,7 @@ void ex_awaitThread()
     loo::Looper mainLooper("main");
     loo::setMainLooper(mainLooper);
 
-    ut::initScheduler(&looScheduleDelayed, &looCancelScheduled);
+    ut::initScheduler(&looSchedule);
 
     ut::AwaitableHandle awt = asyncThread();
 

@@ -86,7 +86,7 @@ static void fetchStocks_sync(const std::string& host, const std::string& port, S
 static void fetchStocks_asyncAwait(const std::string& host, const std::string& port, StockMap& stocks)
 {
     // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioScheduleDelayed, &asioCancelScheduled);
+    ut::initScheduler(&asioSchedule);
 
     ut::AwaitableHandle awt = ut::startAsync("asyncFetchStocks", [&](ut::Awaitable * /* awtSelf */) {
         try {
@@ -136,7 +136,7 @@ static void fetchStocks_asyncAwait(const std::string& host, const std::string& p
         }
     });
 
-    // run main loop; blocks until all async handlers have ben dispatched
+    // run main loop; loops until all async handlers have ben dispatched
     ut::asio::io().run();
 }
 
@@ -264,7 +264,7 @@ static void fetchStocks_asyncCallbacks(const std::string& host, const std::strin
     StockClient session(io, host, port, stocks);
     session.start();
 
-    // run main loop; blocks until all async handlers have ben dispatched
+    // run main loop; loops until all async handlers have ben dispatched
     io.run();
 }
 

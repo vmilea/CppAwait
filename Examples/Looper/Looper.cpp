@@ -43,12 +43,12 @@ Looper::Looper(const std::string& name)
         SchedulerAdapter(Looper& looper)
             : looper(looper) { }
 
-        void schedule(const Runnable& action)
+        void schedule(const Action& action)
         {
             looper.schedule(action);
         }
 
-        void schedule(Runnable&& action)
+        void schedule(Action&& action)
         {
             looper.schedule(std::move(action));
         }

@@ -15,14 +15,8 @@
 */
 
 #include "Looper/Looper.h"
-#include <CppAwait/Awaitable.h>
 
-inline ut::Ticket looScheduleDelayed(long delay, ut::Runnable runnable)
+inline void looSchedule(std::function<void ()> action)
 {
-    return (ut::Ticket) loo::mainLooper().schedule(runnable, delay);
-}
-
-inline bool looCancelScheduled(ut::Ticket ticket)
-{
-    return loo::mainLooper().cancel(ticket);
+    loo::mainLooper().schedule(action);
 }

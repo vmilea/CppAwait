@@ -25,6 +25,7 @@
 
 #include "Config.h"
 #include "StackContext.h"
+#include "OpaqueSharedPtr.h"
 #include "impl/Assert.h"
 #include "impl/Signals.h"
 #include "impl/CallbackGuard.h"
@@ -39,52 +40,84 @@
 namespace ut {
 
 /**
- * @name Scheduling hooks
+ * @name Scheduling hook
  *
- * Hooks for integration with the main loop of your program (Qt / GLib / MFC / Asio ...)
+ * Hook for integration with the main loop of your program (Qt / GLib / MFC / Asio ...)
  */
 ///@{
 
-/** Unique ID for a scheduled action, may be used to cancel an action */
-typedef int Ticket;
+/** Unique handle for a scheduled action, may be used to cancel the action */
+class Ticket
+{
+public:
+    /** Create a dummy ticket */
+    Ticket() { }
 
-/** Reserved ticket ID */
-static const Ticket NO_TICKET = 0;
+    /** Move constructor */
+    Ticket(Ticket&& other)
+        : mAction(std::move(other.mAction)) { }
+
+    /** Move assignment */
+    Ticket& operator=(Ticket&& other)
+    {
+        mAction = std::move(other.mAction);
+        return *this;
+    }
+
+    /** Cancels action */
+    ~Ticket() { }
+
+    /**
+     * Check if ticket is attached to an action
+     *
+     * Returns true unless ticket is dummy or reset. This is unrelated
+     * to action having run or not.
+     */
+    operator bool()
+    {
+        return mAction;
+    }
+
+    /** Reset ticket, cancels action */
+    void reset()
+    {
+        mAction.reset();
+    }
+
+private:
+    Ticket(std::shared_ptr<Action>&& action)
+        : mAction(std::move(action)) { }
+
+    Ticket(const Ticket& other); // delete
+    Ticket& operator=(const Ticket& other); // delete
+
+    std::shared_ptr<Action> mAction;
+
+    friend Ticket scheduleWithTicket(Action action);
+};
 
 /**
- * Hook signature -- schedule a delayed action
- * @param delay     milliseconds to wait before running
- * @param runnable  action to run
- * @return  unique ticket ID
+ * Hook signature -- schedule an action
+ * @param action    action to run
  *
  * Note:
- * - runnable shall not be invoked from within this function even if delay is 0
- * - schedule(0, a), schedule(0, b) implies b cannot run before a
+ * - action shall not be invoked from within this function
+ * - schedule(a), schedule(b) implies a runs before b
  */
-typedef Ticket (*ScheduleDelayedFunc)(long delay, Runnable runnable);
+typedef void (*ScheduleFunc)(Action action);
 
-/**
- * Hook signature -- cancel an action
- * @param ticket  ID of a scheduled action
- * @return  false if action has already executed or if ticket invalid
- */
-typedef bool (*CancelScheduledFunc)(Ticket ticket);
-
-/** Setup scheduling hooks. This must be done before using Awaitable. */
-void initScheduler(ScheduleDelayedFunc schedule, CancelScheduledFunc cancel);
+/** Setup scheduling hook. This must be done before using Awaitable. */
+void initScheduler(ScheduleFunc schedule);
 
 //
 // generic scheduling interface
 //
 
-/** Schedules an action with delay 0 using registered hook */
-Ticket schedule(Runnable runnable);
+/** Schedule an action */
+void schedule(Action action);
 
-/** Schedules an action using registered hook */
-Ticket scheduleDelayed(long delay, Runnable runnable);
-
-/** Cancels an action using registered hook */
-bool cancelScheduled(Ticket ticket);
+/** Schedule an action. Supports cancellation: destroying the ticket will implicitly cancel the action */
+Ticket scheduleWithTicket(Action action);
 
 ///@}
 
@@ -214,7 +247,7 @@ protected:
     OnDoneSignal mOnDone;
 
     void *mUserData;
-    Runnable mUserDataDeleter;
+    Action mUserDataDeleter;
 
 private:
     Awaitable(const Awaitable&); // noncopyable
@@ -252,9 +285,6 @@ private:
  *
  */
 AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, size_t stackSize = StackContext::defaultStackSize());
-
-/** Returns an awaitable that will complete after delay milliseconds */
-AwaitableHandle asyncDelay(long delay);
 
 
 /**
@@ -640,21 +670,12 @@ public:
     };
 
     /** Default constructor */
-    Completable()
-        : mTicket(0) { }
+    Completable() { }
 
     /** Create a named completable */
     Completable(const std::string& tag)
-        : mTicket(0)
     {
         setTag(tag);
-    }
-
-    ~Completable()
-    {
-        if (mTicket != 0) {
-            cancelScheduled(mTicket);
-        }
     }
 
     /**
@@ -666,7 +687,7 @@ public:
     {
         // callable only from main context
 
-        ut_assert_(mTicket == 0);
+        ut_assert_(!mTicket);
         ut_assert_(currentContext() == mainContext());
 
         mGuard.block();
@@ -682,7 +703,7 @@ public:
     {
         // callable only from main context
 
-        ut_assert_(mTicket == 0);
+        ut_assert_(!mTicket);
         ut_assert_(currentContext() == mainContext());
 
         mGuard.block();
@@ -696,11 +717,11 @@ public:
     {
         // callable from any stack context
 
-        if (mTicket == 0) {
+        if (!mTicket) {
             mGuard.block();
 
-            mTicket = schedule([this]() {
-                mTicket = 0;
+            mTicket = scheduleWithTicket([this]() {
+                mTicket.reset();
                 complete();
             });
         }
@@ -713,11 +734,11 @@ public:
     {
         // callable from any stack context
 
-        if (mTicket == 0) {
+        if (!mTicket) {
             mGuard.block();
 
-            mTicket = schedule([this, eptr]() {
-                mTicket = 0;
+            mTicket = scheduleWithTicket([this, eptr]() {
+                mTicket.reset();
                 fail(eptr);
             });
         }

@@ -294,10 +294,10 @@ static ut::AwaitableHandle asyncChatServer(unsigned short port)
 void ex_awaitChatServer()
 {
     // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioScheduleDelayed, &asioCancelScheduled);
+    ut::initScheduler(&asioSchedule);
 
     ut::AwaitableHandle awt = asyncChatServer(3455);
 
-    // blocks until all async handlers have ben dispatched
+    // loops until all async handlers have ben dispatched
     ut::asio::io().run();
 }

@@ -26,28 +26,67 @@ namespace ut {
 // scheduler
 //
 
-static ScheduleDelayedFunc sScheduleDelayed = nullptr;
-static CancelScheduledFunc sCancelScheduled = nullptr;
-
-void initScheduler(ScheduleDelayedFunc schedule, CancelScheduledFunc cancel)
+// runs an action unless it has been canceled
+class WeakAction
 {
-    sScheduleDelayed = schedule;
-    sCancelScheduled = cancel;
+public:
+    WeakAction() { }
+
+    WeakAction(const std::shared_ptr<Action>& func)
+        : mAction(func) { }
+
+    WeakAction(const WeakAction& other)
+        : mAction(other.mAction) { }
+
+    WeakAction& operator=(const WeakAction& other)
+    {
+        mAction = other.mAction;
+        return *this;
+    }
+
+    WeakAction(WeakAction&& other)
+        : mAction(std::move(other.mAction)) { }
+
+    WeakAction& operator=(WeakAction&& other)
+    {
+        mAction = std::move(other.mAction);
+        return *this;
+    }
+
+    void operator()() const
+    {
+        if (std::shared_ptr<Action> action = mAction.lock()) {
+            (*action)();
+
+            // reset functor, otherwise it leaks until Ticket reset
+            (*action) = Action(); 
+        }
+    }
+
+private:
+    std::weak_ptr<Action> mAction;
+};
+
+
+static ScheduleFunc sSchedule = nullptr;
+
+void initScheduler(ScheduleFunc schedule)
+{
+    sSchedule = schedule;
 }
 
-Ticket schedule(Runnable runnable)
+void schedule(Action action)
 {
-    return sScheduleDelayed(0, std::move(runnable));
+    sSchedule(std::move(action));
 }
 
-Ticket scheduleDelayed(long delay, Runnable runnable)
+Ticket scheduleWithTicket(Action action)
 {
-    return sScheduleDelayed(delay, std::move(runnable));
-}
+    auto sharedAction = std::make_shared<Action>(std::move(action));
 
-bool cancelScheduled(Ticket ticket)
-{
-    return sCancelScheduled(ticket);
+    sSchedule(WeakAction(sharedAction));
+
+    return Ticket(std::move(sharedAction));
 }
 
 //
@@ -56,16 +95,25 @@ bool cancelScheduled(Ticket ticket)
 
 Awaitable::~Awaitable()
 {
-    ut_log_debug_("* destroy awt '%s', didComplete = %d, didFail = %d", tag(), didComplete(), didFail());
+    const char *status;
+
+    if (didComplete()) {
+        status = "completed";
+    } else if (didFail()) {
+        status = "failed";
+    } else {
+        status = "interrupted";
+    }
+
+    ut_log_debug_("* destroy awt '%s' (%s)", tag(), status);
 
     if (didComplete() || didFail()) {
         ut_assert_(mAwaitingContext == nullptr);
-        ut_assert_(mStartTicket == 0);
+        ut_assert_(!mStartTicket);
     } else {
-        if (mStartTicket != 0) {
+        if (mStartTicket) {
             ut_assert_(mAwaitingContext == nullptr);
-            cancelScheduled(mStartTicket);
-            mStartTicket = 0;
+            mStartTicket.reset(); // cancel action
         }
         if (mAwaitingContext != nullptr) {
             // can't print awaiting context tag since it may have been deleted
@@ -100,6 +148,8 @@ Awaitable::~Awaitable()
     if (mUserDataDeleter) {
         mUserDataDeleter();
     }
+
+    ut_log_debug_("* destroy awt '%s' end", tag());
 }
 
 void Awaitable::await()
@@ -119,7 +169,7 @@ void Awaitable::await()
         if (mBoundContext == nullptr) {
             // No bound context, go back to main loop.
             yieldTo(mainContext());
-        } else if (mStartTicket == 0) {
+        } else if (!mStartTicket) {
             // Bound context already started through main loop. This can happen
             // if we awaited some other Awaitable before this one and the main loop
             // had time to spin.
@@ -127,8 +177,7 @@ void Awaitable::await()
         } else {
             // Since we need to yield anyway, bound context can be started
             // immediately instead of going through main loop.
-            cancelScheduled(mStartTicket);
-            mStartTicket = 0;
+            mStartTicket.reset(); // cancel action
             yieldTo(mBoundContext);
         }
 
@@ -221,12 +270,11 @@ void Awaitable::setTag(const std::string& tag)
 Awaitable::Awaitable()
     : mBoundContext(nullptr)
     , mAwaitingContext(nullptr)
-    , mStartTicket(0)
     , mDidComplete(false)
     , mUserData(nullptr)
 {
-    if (sScheduleDelayed == nullptr || sCancelScheduled == nullptr) {
-        throw std::runtime_error("Scheduler hooks not setup, you must call initScheduler()");
+    if (sSchedule == nullptr) {
+        throw std::runtime_error("Scheduler hook not setup, you must call initScheduler()");
     }
 }
 
@@ -290,27 +338,9 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
     awt->mBoundContext = context;
 
     // defer start until current context suspends itself
-    awt->mStartTicket = schedule([awt] {
-        awt->mStartTicket = 0;
+    awt->mStartTicket = scheduleWithTicket([awt] {
+        awt->mStartTicket.reset();
         yieldTo(awt->mBoundContext);
-    });
-
-    return AwaitableHandle(awt);
-}
-
-AwaitableHandle asyncDelay(long delay)
-{
-    Completable *awt = new Completable();
-    awt->setTag(string_printf("async-delay-%ld", delay));
-
-    Ticket ticket = scheduleDelayed(delay, [delay, awt] {
-        awt->complete();
-    });
-
-    awt->connectToDone([ticket](Awaitable *awt) {
-        if (awt->didFail()) {
-            cancelScheduled(ticket);
-        }
     });
 
     return AwaitableHandle(awt);

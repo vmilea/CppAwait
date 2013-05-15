@@ -31,9 +31,9 @@ protected:
 public:
     virtual ~AbstractScheduler() { }
     
-    virtual void schedule(const ut::Runnable& action) = 0;
+    virtual void schedule(const ut::Action& action) = 0;
 
-    virtual void schedule(ut::Runnable&& action)
+    virtual void schedule(ut::Action&& action)
     {
         schedule(action);
     }
@@ -52,7 +52,7 @@ class ImmediateScheduler : public AbstractScheduler
 public:
     ImmediateScheduler() { }
 
-    void schedule(const ut::Runnable& action)
+    void schedule(const ut::Action& action)
     {
         action();
     }

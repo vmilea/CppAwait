@@ -223,7 +223,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
 void ex_awaitFlickr()
 {
     // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioScheduleDelayed, &asioCancelScheduled);
+    ut::initScheduler(&asioSchedule);
 
     printf ("tags (default 'kitten'): ");
     std::string tags = readLine();
@@ -239,6 +239,6 @@ void ex_awaitFlickr()
 
     ut::AwaitableHandle awt = asyncFlickrDownload(splitTags, 25, 10);
 
-    // blocks until all async handlers have ben dispatched
+    // loops until all async handlers have ben dispatched
     ut::asio::io().run();
 }

@@ -157,7 +157,7 @@ void ex_awaitHttpClient()
     loo::Looper mainLooper("main");
     loo::setMainLooper(mainLooper);
 
-    ut::initScheduler(&looScheduleDelayed, &looCancelScheduled);
+    ut::initScheduler(&looSchedule);
 
     // Dispatch Boost.Asio ready handlers every 5ms. This is a simple way to integrate
     // Asio into your GUI without hogging CPU. Having Asio drive the run loop instead

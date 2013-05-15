@@ -22,5 +22,5 @@
 namespace ut {
     using namespace std::placeholders;
 
-    typedef std::function<void ()> Runnable;
+    typedef std::function<void ()> Action;
 }

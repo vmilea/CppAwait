@@ -14,8 +14,9 @@
 * limitations under the License.
 */
 
-#include <CppAwait/Awaitable.h>
+#include <CppAwait/AsioWrappers.h>
 
-ut::Ticket asioScheduleDelayed(long delay, ut::Runnable runnable);
-
-bool asioCancelScheduled(ut::Ticket ticket);
+inline void asioSchedule(std::function<void ()> action)
+{
+    ut::asio::io().post(action);
+}

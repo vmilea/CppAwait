@@ -235,7 +235,6 @@ struct StackContext::Impl
     StackContext::Coroutine coroutine;
     bool isRunning;
     bool isFullyUnwinded;
-    Runnable postRunAction;
 
     Impl(const std::string& tag, const std::pair<void *, size_t>& stack)
         : tag(tag)

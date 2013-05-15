@@ -166,10 +166,10 @@ void ex_awaitChatClient()
     std::string nickname = readLine();
 
     // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioScheduleDelayed, &asioCancelScheduled);
+    ut::initScheduler(&asioSchedule);
 
     ut::AwaitableHandle awt = asyncChatClient("localhost", "3455", nickname);
 
-    // blocks until all async handlers have ben dispatched
+    // loops until all async handlers have ben dispatched
     ut::asio::io().run();
 }

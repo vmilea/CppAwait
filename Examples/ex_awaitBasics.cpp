@@ -16,7 +16,9 @@
 
 #include "ExUtil.h"
 #include "LooScheduler.h"
+#include "AsioScheduler.h"
 #include <CppAwait/Awaitable.h>
+#include <CppAwait/AsioWrappers.h>
 #include <Looper/Looper.h>
 #include <array>
 
@@ -24,27 +26,37 @@
 // ABOUT: how to define, use & combine Awaitables
 //
 
-// simple awaitable, without a stack context
+// simple awaitable without a stack context
 //
-static ut::AwaitableHandle asyncMySimpleDelay(long delay)
+static ut::AwaitableHandle asyncSimpleDelay(long delay)
 {
     // on calling context
     ut::Completable *awt = new ut::Completable();
     
-    ut::Ticket ticket = ut::scheduleDelayed(delay, [=]() {
-        // on 'main' context
-        awt->complete();
+    // Schedule completion after delay milliseconds. Exactly what triggers
+    // completion is an implementation detail -- here we use an Asio
+    // deadline_timer. The only thing that matters is to call complete()
+    // from main context (i.e. your main loop).
+
+    auto timer = new boost::asio::deadline_timer(
+        ut::asio::io(), boost::posix_time::milliseconds(delay));
+
+    timer->async_wait([awt](const boost::system::error_code& ec) {
+        // on main context (io_service)
+
+        if (ec == boost::asio::error::operation_aborted) {
+            return; // awt is already destroyed
+        }
+        awt->complete(); // yields to awaiting context
     });
 
-    // cancel ticket if interrupted
-    awt->connectToDone([ticket](ut::Awaitable *awt) {
-        if (awt->didFail()) {
-            ut::cancelScheduled(ticket);
-        }
+    // cancel timer if interrupted
+    awt->connectToDone([timer](ut::Awaitable *awt) {
+        delete timer; // posts error::operation_aborted
     });
 
     // awaitables can be tagged to ease debugging
-    awt->setTag(ut::string_printf("my-simple-delay-%ld", delay));
+    awt->setTag(ut::string_printf("simple-delay-%ld", delay));
 
     return ut::AwaitableHandle(awt);
 }
@@ -53,16 +65,16 @@ static ut::AwaitableHandle asyncMySimpleDelay(long delay)
 // yield/await. await() *does not block* , instead it yields to main context.
 // After task is done, awaiting context will resume.
 //
-static ut::AwaitableHandle asyncMyDelay(long delay)
+static ut::AwaitableHandle asyncCoroutineDelay(long delay)
 {
     // on calling context
-    std::string tag = ut::string_printf("my-delay-%ld", delay);
+    std::string tag = ut::string_printf("coroutine-delay-%ld", delay);
 
     return ut::startAsync(tag, [=](ut::Awaitable *self) {
         // on 'my-delay-2' context
         printf ("'%s' - start\n", ut::currentContext()->tag());
 
-        ut::AwaitableHandle awt = asyncMySimpleDelay(delay);
+        ut::AwaitableHandle awt = asyncSimpleDelay(delay);
 
         // free to do other stuff...
 
@@ -82,17 +94,15 @@ static ut::AwaitableHandle asyncTest()
 
         // it's trivial to compose awaitables
         std::array<ut::AwaitableHandle, 3> awts = { {
-            asyncMyDelay(400),
-            asyncMyDelay(300),
-            asyncMyDelay(800)
+            asyncSimpleDelay(400),
+            asyncCoroutineDelay(300),
+            asyncCoroutineDelay(800)
         } };
         ut::awaitAll(awts);
         
         printf ("'%s' - done\n", ut::currentContext()->tag());
 
-        ut::schedule([]() {
-            loo::mainLooper().quit();
-        });
+        ut::asio::io().stop();
 
         // AwaitableHandle is a unique_ptr<Awaitable>. When awaitable gets
         // destroyed it releases bound context (if any).
@@ -101,27 +111,30 @@ static ut::AwaitableHandle asyncTest()
 
 void ex_awaitBasics()
 {
-    // Your application needs a run loop, otherwise there's no way to awake from await.
-    // CppAwait has two hooks -- scheduleDelayed() and cancelScheduled() -- that must
-    // be implemented using your API of choice (Qt / GLib / MFC / Asio ...).
-    // 
-    // here we just use a custom run loop
-    loo::Looper mainLooper("main");
-    loo::setMainLooper(mainLooper);
+    // Your application needs a run loop to alternate between Awaitables.
+    // CppAwait relies on a schedule() hook that must be implemented using your API
+    // of choice (Qt / GLib / MFC / Asio ...).
+    //
+    // here we run on top of Boost.Asio io_service
+    ut::initScheduler(&asioSchedule);
 
-    ut::initScheduler(&looScheduleDelayed, &looCancelScheduled);
+    ut::AwaitableHandle awtTest = asyncTest();
 
     // print every 100ms to show main loop is not blocked
-    mainLooper.scheduleRepeating([]() -> bool {
-        printf ("...\n"); // on main context
-        return true;
-    }, 0, 100);
+    ut::AwaitableHandle awtTicker = ut::startAsync("ticker", [](ut::Awaitable *self) {
+        while (true) {
+            ut::AwaitableHandle awt = asyncSimpleDelay(100);
+            awt->await();
 
-    ut::AwaitableHandle awt = asyncTest();
-    
+            printf ("...\n");
+        }
+    });
+
+    // Awaitables started from main context are fire-and-forget, can't await()
+
     printf ("'%s' - START\n", ut::currentContext()->tag());
 
-    mainLooper.run();
+    ut::asio::io().run();
 
     printf ("'%s' - END\n", ut::currentContext()->tag());
 }

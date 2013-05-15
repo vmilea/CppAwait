@@ -55,6 +55,38 @@ inline std::exception_ptr eptr(const boost::system::error_code& ec)
 }
 
 
+template <typename Timer>
+inline AwaitableHandle asyncWait(Timer& timer)
+{
+    auto awt = new ut::Completable("asyncWait");
+
+    timer.async_wait(
+                     awt->wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+        return eptr(ec);
+    }));
+
+    return AwaitableHandle(awt);
+}
+
+template <typename DurationType>
+AwaitableHandle asyncDelay(const DurationType& delay)
+{
+    auto awt = new ut::Completable("asyncDelay");
+
+    auto timer = new boost::asio::deadline_timer(io(), delay);
+
+    timer->async_wait(
+                      awt->wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+        return eptr(ec);
+    }));
+
+    awt->connectToDone([timer](Awaitable *awt) {
+        delete timer;
+    });
+
+    return AwaitableHandle(awt);
+}
+
 template <typename Resolver>
 inline AwaitableHandle asyncResolve(Resolver& resolver, const typename Resolver::query& query, typename Resolver::iterator& outEndpoints)
 {
