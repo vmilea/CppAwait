@@ -26,28 +26,28 @@
 // ABOUT: how to define, use & combine Awaitables
 //
 
-// simple awaitable without a stack context
+// simple awaitable without coroutine
 //
 static ut::AwaitableHandle asyncSimpleDelay(long delay)
 {
-    // on calling context
+    // on calling coroutine
     ut::Completable *awt = new ut::Completable();
     
     // Schedule completion after delay milliseconds. Exactly what triggers
     // completion is an implementation detail -- here we use an Asio
     // deadline_timer. The only thing that matters is to call complete()
-    // from main context (i.e. your main loop).
+    // from master coroutine (i.e. your main loop).
 
     auto timer = new boost::asio::deadline_timer(
         ut::asio::io(), boost::posix_time::milliseconds(delay));
 
     timer->async_wait([awt](const boost::system::error_code& ec) {
-        // on main context (io_service)
+        // on master coroutine (io_service)
 
         if (ec == boost::asio::error::operation_aborted) {
             return; // awt is already destroyed
         }
-        awt->complete(); // yields to awaiting context
+        awt->complete(); // yields to awaiting coroutine
     });
 
     // cancel timer if interrupted
@@ -61,18 +61,18 @@ static ut::AwaitableHandle asyncSimpleDelay(long delay)
     return ut::AwaitableHandle(awt);
 }
 
-// Awaitable with dedicated context. Having a separate context means you can
-// yield/await. await() *does not block* , instead it yields to main context.
-// After task is done, awaiting context will resume.
+// Awaitable with dedicated coroutine. While in a coroutine you may yield.
+// await() simply means 'yield until task is done'. It does not block, instead
+// it yields to main loop if necessary until task done.
 //
-static ut::AwaitableHandle asyncCoroutineDelay(long delay)
+static ut::AwaitableHandle asyncCoroDelay(long delay)
 {
-    // on calling context
-    std::string tag = ut::string_printf("coroutine-delay-%ld", delay);
+    // on calling coroutine
+    std::string tag = ut::string_printf("coro-delay-%ld", delay);
 
     return ut::startAsync(tag, [=](ut::Awaitable *self) {
-        // on 'my-delay-2' context
-        printf ("'%s' - start\n", ut::currentContext()->tag());
+        // on 'coro-delay' coroutine
+        printf ("'%s' - start\n", ut::currentCoro()->tag());
 
         ut::AwaitableHandle awt = asyncSimpleDelay(delay);
 
@@ -80,7 +80,7 @@ static ut::AwaitableHandle asyncCoroutineDelay(long delay)
 
         awt->await(); // yield until awt done
 
-        printf ("'%s' - done\n", ut::currentContext()->tag());
+        printf ("'%s' - done\n", ut::currentCoro()->tag());
     });
 }
 
@@ -89,23 +89,23 @@ static ut::AwaitableHandle asyncCoroutineDelay(long delay)
 static ut::AwaitableHandle asyncTest()
 {
     return ut::startAsync("test", [](ut::Awaitable *self) {
-        // on 'test' context
-        printf ("'%s' - start\n", ut::currentContext()->tag());
+        // on 'test' coroutine
+        printf ("'%s' - start\n", ut::currentCoro()->tag());
 
         // it's trivial to compose awaitables
         std::array<ut::AwaitableHandle, 3> awts = { {
             asyncSimpleDelay(400),
-            asyncCoroutineDelay(300),
-            asyncCoroutineDelay(800)
+            asyncCoroDelay(300),
+            asyncCoroDelay(800)
         } };
         ut::awaitAll(awts);
         
-        printf ("'%s' - done\n", ut::currentContext()->tag());
+        printf ("'%s' - done\n", ut::currentCoro()->tag());
 
         ut::asio::io().stop();
 
         // AwaitableHandle is a unique_ptr<Awaitable>. When awaitable gets
-        // destroyed it releases bound context (if any).
+        // destroyed it releases bound coroutine (if any).
     });
 }
 
@@ -130,11 +130,11 @@ void ex_awaitBasics()
         }
     });
 
-    // Awaitables started from main context are fire-and-forget, can't await()
+    // Awaitables started from main stack are fire-and-forget, can't await()
 
-    printf ("'%s' - START\n", ut::currentContext()->tag());
+    printf ("'%s' - START\n", ut::currentCoro()->tag());
 
     ut::asio::io().run();
 
-    printf ("'%s' - END\n", ut::currentContext()->tag());
+    printf ("'%s' - END\n", ut::currentCoro()->tag());
 }

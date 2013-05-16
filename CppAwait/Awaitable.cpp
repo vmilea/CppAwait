@@ -108,41 +108,41 @@ Awaitable::~Awaitable()
     ut_log_debug_("* destroy awt '%s' (%s)", tag(), status);
 
     if (didComplete() || didFail()) {
-        ut_assert_(mAwaitingContext == nullptr);
+        ut_assert_(mAwaitingCoro == nullptr);
         ut_assert_(!mStartTicket);
     } else {
         if (mStartTicket) {
-            ut_assert_(mAwaitingContext == nullptr);
+            ut_assert_(mAwaitingCoro == nullptr);
             mStartTicket.reset(); // cancel action
         }
-        if (mAwaitingContext != nullptr) {
-            // can't print awaiting context tag since it may have been deleted
+        if (mAwaitingCoro != nullptr) {
+            // can't print awaiting coroutine tag since it may have been deleted
             // (e.g. a persistent Completable may outlive its awaiter)
             ut_log_debug_("* while being awaited");
-            mAwaitingContext = nullptr;
+            mAwaitingCoro = nullptr;
         }
 
-        if (mBoundContext != nullptr) {
-            ut_log_debug_("* force unwinding of bound context '%s'", mBoundContext->tag());
+        if (mBoundCoro != nullptr) {
+            ut_log_debug_("* force unwinding of bound coroutine '%s'", mBoundCoro->tag());
 
             if (std::uncaught_exception()) {
                 ut_log_debug_("  got uncaught exception");
             }
 
-            ut_assert_(mBoundContext->isRunning());
+            ut_assert_(mBoundCoro->isRunning());
 
-            // override parent to get back here after unwinding bound context
-            mBoundContext->setParent(currentContext());
-            // resume context, force fail() via ForcedUnwind 
-            forceUnwind(mBoundContext);
+            // override parent to get back here after unwinding bound coroutine
+            mBoundCoro->setParent(currentCoro());
+            // resume coroutine, force fail() via ForcedUnwind 
+            forceUnwind(mBoundCoro);
         } else {
             fail(YieldForbidden::ptr());
         }
     }
 
-    if (mBoundContext != nullptr) {
-        ut_assert_(!mBoundContext->isRunning());
-        delete mBoundContext;
+    if (mBoundCoro != nullptr) {
+        ut_assert_(!mBoundCoro->isRunning());
+        delete mBoundCoro;
     }
 
     if (mUserDataDeleter) {
@@ -154,36 +154,36 @@ Awaitable::~Awaitable()
 
 void Awaitable::await()
 {
-    ut_log_debug_("* context '%s' awaits %s", currentContext()->tag(), tag());
+    ut_log_debug_("* coroutine '%s' awaits %s", currentCoro()->tag(), tag());
 
-    ut_assert_(currentContext() != mainContext());
-    ut_assert_(mAwaitingContext == nullptr);
+    ut_assert_(currentCoro() != masterCoro());
+    ut_assert_(mAwaitingCoro == nullptr);
 
     if (!(mExceptionPtr == std::exception_ptr())) {
         std::rethrow_exception(mExceptionPtr);
     }
 
     if (!mDidComplete) {
-        mAwaitingContext = currentContext();
+        mAwaitingCoro = currentCoro();
 
-        if (mBoundContext == nullptr) {
-            // No bound context, go back to main loop.
-            yieldTo(mainContext());
+        if (mBoundCoro == nullptr) {
+            // No bound coroutine, go back to main loop.
+            yieldTo(masterCoro());
         } else if (!mStartTicket) {
-            // Bound context already started through main loop. This can happen
+            // Bound coroutine already started through main loop. This can happen
             // if we awaited some other Awaitable before this one and the main loop
             // had time to spin.
-            yieldTo(mainContext());
+            yieldTo(masterCoro());
         } else {
-            // Since we need to yield anyway, bound context can be started
+            // Since we need to yield anyway, bound coroutine can be started
             // immediately instead of going through main loop.
             mStartTicket.reset(); // cancel action
-            yieldTo(mBoundContext);
+            yieldTo(mBoundCoro);
         }
 
         ut_assert_(isDone());
 
-        mAwaitingContext = nullptr;
+        mAwaitingCoro = nullptr;
 
         if (!(mExceptionPtr == std::exception_ptr())) {
             std::rethrow_exception(mExceptionPtr);
@@ -216,12 +216,12 @@ void Awaitable::complete()
 
     mOnDone(this);
 
-    if (mAwaitingContext != nullptr) {
-        if (currentContext() != mainContext() && currentContext() != mBoundContext) {
-            ut_assert_(false && "called from wrong context");
+    if (mAwaitingCoro != nullptr) {
+        if (currentCoro() != masterCoro() && currentCoro() != mBoundCoro) {
+            ut_assert_(false && "called from wrong coroutine");
         }
 
-        yieldTo(mAwaitingContext, this);
+        yieldTo(mAwaitingCoro, this);
     }
 }
 
@@ -236,12 +236,12 @@ void Awaitable::fail(std::exception_ptr eptr)
 
     mOnDone(this);
 
-    if (mAwaitingContext != nullptr) {
-        if (currentContext() != mainContext() && currentContext() != mBoundContext) {
-            ut_assert_(false && "called from wrong context");
+    if (mAwaitingCoro != nullptr) {
+        if (currentCoro() != masterCoro() && currentCoro() != mBoundCoro) {
+            ut_assert_(false && "called from wrong coroutine");
         }
 
-        yieldTo(mAwaitingContext, this);
+        yieldTo(mAwaitingCoro, this);
     }
 }
 
@@ -268,8 +268,8 @@ void Awaitable::setTag(const std::string& tag)
 // protected members
 
 Awaitable::Awaitable()
-    : mBoundContext(nullptr)
-    , mAwaitingContext(nullptr)
+    : mBoundCoro(nullptr)
+    , mAwaitingCoro(nullptr)
     , mDidComplete(false)
     , mUserData(nullptr)
 {
@@ -289,7 +289,7 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
 
     ut_log_debug_("* starting awt '%s'", tag.c_str());
 
-    StackContext *context = new StackContext(tag, [awt, func](void *) {
+    Coro *coro = new Coro(tag, [awt, func](void *) {
         std::exception_ptr eptr;
 
         try {
@@ -318,29 +318,29 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
         ut_assert_(!awt->didFail());
         ut_assert_(!awt->didComplete());
 
-		if (awt->mAwaitingContext != nullptr) {
-            // wait until context fully unwinded before yielding to awaiting context
-            awt->mBoundContext->setParent(awt->mAwaitingContext);
-            awt->mAwaitingContext = nullptr;
+        if (awt->mAwaitingCoro != nullptr) {
+            // wait until coroutine fully unwinded before yielding to awaiter
+            awt->mBoundCoro->setParent(awt->mAwaitingCoro);
+            awt->mAwaitingCoro = nullptr;
         }
 
         if (eptr == std::exception_ptr()) {
-            awt->complete(); // mAwaitingContext is null, won't yield
+            awt->complete(); // mAwaitingCoro is null, won't yield
         } else {
-            awt->fail(eptr); // mAwaitingContext is null, won't yield
+            awt->fail(eptr); // mAwaitingCoro is null, won't yield
         }
 
         // This function will never throw an exception. Instead, exceptions
         // are stored in the Awaitable and get rethrown by await().
     }, stackSize);
 
-    context->setParent(mainContext());
-    awt->mBoundContext = context;
+    coro->setParent(masterCoro());
+    awt->mBoundCoro = coro;
 
-    // defer start until current context suspends itself
+    // defer start until current coroutine suspends itself
     awt->mStartTicket = scheduleWithTicket([awt] {
         awt->mStartTicket.reset();
-        yieldTo(awt->mBoundContext);
+        yieldTo(awt->mBoundCoro);
     });
 
     return AwaitableHandle(awt);

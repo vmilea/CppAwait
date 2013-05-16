@@ -25,7 +25,7 @@
 
 #include "Config.h"
 #include "impl/Assert.h"
-#include "StackContext.h"
+#include "Coro.h"
 #include <iterator>
 
 #define YS_DONE ((void *) -1)
@@ -45,14 +45,14 @@ public:
     /**
      * Wraps coroutine into an iterable sequence
      *
-     * @param coroutine   Generator coroutine. May yield pointers to T or an exception.
+     * @param func   Generator. May yield pointers to T or an exception.
      */
-    YieldSequence(StackContext::Coroutine coroutine)
-        : mContext("YieldSequence")
+    YieldSequence(Coro::Func func)
+        : mCoro("YieldSequence")
         , mCurrentValue(nullptr)
     {
-        mContext.start([=](void *startValue) {
-            coroutine(startValue);
+        mCoro.start([=](void *startValue) {
+            func(startValue);
             mCurrentValue = YS_DONE;
         });
     }
@@ -60,14 +60,14 @@ public:
     ~YieldSequence()
     {
         if (mCurrentValue != YS_DONE) {
-            ut_assert_(mContext.isRunning());
-            forceUnwind(&mContext);
+            ut_assert_(mCoro.isRunning());
+            forceUnwind(&mCoro);
         }
     }
 
     /** Move constructor */
     YieldSequence(YieldSequence&& other)
-        : mContext(std::move(other.mContext))
+        : mCoro(std::move(other.mCoro))
         , mCurrentValue(other.mCurrentValue)
     {
         other.mCurrentValue = YS_DONE;
@@ -77,7 +77,7 @@ public:
     YieldSequence& operator=(YieldSequence&& other)
     {
         if (this != &other) {
-            mContext = std::move(other.mContext);
+            mCoro = std::move(other.mCoro);
             mCurrentValue = other.mCurrentValue;
             other.mCurrentValue = YS_DONE;
         }
@@ -134,7 +134,7 @@ public:
             ut_assert_(mContainer->mCurrentValue != YS_DONE);
 
             try {
-                void *value = yieldTo(&mContainer->mContext);
+                void *value = yieldTo(&mContainer->mCoro);
 
                 if (mContainer->mCurrentValue == YS_DONE) { // coroutine has finished
                     mContainer = nullptr;
@@ -174,7 +174,7 @@ public:
     };
 
 private:
-    StackContext mContext;
+    Coro mCoro;
     void *mCurrentValue;
 };
 

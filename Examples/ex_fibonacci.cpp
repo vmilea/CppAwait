@@ -15,7 +15,7 @@
 */
 
 #include "ExUtil.h"
-#include <CppAwait/StackContext.h>
+#include <CppAwait/Coro.h>
 #include <CppAwait/YieldSequence.h>
 #include <array>
 
@@ -43,22 +43,22 @@ static void coFiboGenerator(void *startValue)
 void ex_fibonacci()
 {
     {
-        auto fiboSC = new ut::StackContext("fibo-generator", &coFiboGenerator);
+        auto fiboCoro = new ut::Coro("fibo-generator", &coFiboGenerator);
 
         for (int i = 0; i < 10; i++) {
             // yield nullptr to coroutine
-            auto value = (long *) ut::yieldTo(fiboSC);
+            auto value = (long *) ut::yieldTo(fiboCoro);
 
             // back from coroutine. value points to an integer on fibo stack
             printf ("%ld\n", *value);
         }
         printf ("\n\n");
 
-        // Terminate context via exception. You could also yield a flag
+        // Terminate coroutine via exception. You could also yield a flag
         // that coroutine checks to see if it should quit.
-        ut::forceUnwind(fiboSC);
+        ut::forceUnwind(fiboCoro);
 
-        delete fiboSC;
+        delete fiboCoro;
     }
 
     {

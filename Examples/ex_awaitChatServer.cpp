@@ -127,7 +127,7 @@ public:
     {
         mMsgQueue.push(msg);
 
-        // wake up writer. scheduleComplete() must be used because we're not on main context
+        // wake up writer. scheduleComplete() must be used because we're not on master coroutine
         mAwtMsgQueued->scheduleComplete();
     }
 

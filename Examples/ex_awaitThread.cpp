@@ -34,7 +34,7 @@ using namespace loo::lchrono;
 static ut::AwaitableHandle asyncCountdown()
 {
     return ut::startAsync("asyncCountdown", [](ut::Awaitable * /* awtSelf */) {
-        ut::StackContext *context = ut::currentContext();
+        ut::Coro *coro = ut::currentCoro();
 
         timed_mutex mutex;
         condition_variable_any cond;
@@ -65,7 +65,7 @@ static ut::AwaitableHandle asyncCountdown()
                     { lock_guard<timed_mutex> _(lambdaMutex);
                         completionTicket.reset();
                     }
-                    ut::yieldTo(context);
+                    ut::yieldTo(coro);
                 });
             }
         });
@@ -93,7 +93,7 @@ static ut::AwaitableHandle asyncCountdown()
 static ut::AwaitableHandle asyncKey()
 {
     return ut::startAsync("asyncKey", [](ut::Awaitable * /* awtSelf */) {
-        ut::StackContext *context = ut::currentContext();
+        ut::Coro *coro = ut::currentCoro();
 
         thread keyThread([&]() {
             // Wait for user to hit [Return]. Uninterruptible blocking calls
@@ -102,7 +102,7 @@ static ut::AwaitableHandle asyncKey()
             readLine();
 
             ut::schedule([&]() {
-                ut::yieldTo(context);
+                ut::yieldTo(coro);
             });
         });
 

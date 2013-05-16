@@ -94,7 +94,7 @@ public:
     /* Check if an object is being referenced */
     operator bool()
     {
-        return mHolder;
+        return mHolder.get() != nullptr;
     }
 
 private:

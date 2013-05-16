@@ -15,7 +15,7 @@
 */
 
 #include "ExUtil.h"
-#include <CppAwait/StackContext.h>
+#include <CppAwait/Coro.h>
 #include <CppAwait/YieldSequence.h>
 #include <array>
 

@@ -18,7 +18,7 @@ target_link_libraries (examples cpp_await)
 target_link_libraries (examples ${Boost_LIBRARIES})
 
 if (WIN32)
-    target_link_libraries (examples ws2_32)
+    target_link_libraries (examples ws2_32 mswsock)
 elseif (UNIX)
     target_link_libraries (examples rt pthread)
 endif()

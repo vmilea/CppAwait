@@ -15,7 +15,7 @@
 */
 
 #include "ExUtil.h"
-#include <CppAwait/StackContext.h>
+#include <CppAwait/Coro.h>
 #include <list>
 #include <array>
 #include <stdexcept>
@@ -94,16 +94,16 @@ static void coComboDetector(void *startValue)
 
 void ex_comboDetector()
 {
-    auto detectorSC = new ut::StackContext("combo-detector", &coComboDetector);
+    auto detectorCoro = new ut::Coro("combo-detector", &coComboDetector);
 
     foreach_(char chr, BUTTON_MASH) {
-        auto match = (size_t *) ut::yieldTo(detectorSC, &chr);
+        auto match = (size_t *) ut::yieldTo(detectorCoro, &chr);
 
         if (match != nullptr) {
             printf ("matched '%s'\n", COMBOS[*match].c_str());
         }
     }
 
-    ut::yieldTo(detectorSC); // yield nullptr to quit
-    delete detectorSC;
+    ut::yieldTo(detectorCoro); // yield nullptr to quit
+    delete detectorCoro;
 }

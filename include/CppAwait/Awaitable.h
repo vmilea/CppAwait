@@ -24,7 +24,7 @@
 #pragma once
 
 #include "Config.h"
-#include "StackContext.h"
+#include "Coro.h"
 #include "OpaqueSharedPtr.h"
 #include "impl/Assert.h"
 #include "impl/Signals.h"
@@ -75,7 +75,7 @@ public:
      */
     operator bool()
     {
-        return mAction;
+        return mAction.get() != nullptr;
     }
 
     /** Reset ticket, cancels action */
@@ -165,20 +165,20 @@ public:
     virtual ~Awaitable();
 
     /**
-     * Suspend current context until done
+     * Suspend current coroutine until done
      *
-     * If not yet done, await() yields control to main context. As an optimization,
+     * If not yet done, await() yields control to master coroutine. As an optimization,
      * if the Awaitable was created with startAsync() and it has not yet started,
      * control will be yielded directly to its coroutine instead.
      *
-     * On successful completion the awaiting context is resumed. Subsequent
+     * On successful completion the awaiting coroutine is resumed. Subsequent
      * calls to await() will return immediately.
-     * On failure the exception will be raised in the awaiting context (if any).
+     * On failure the exception will be raised in the awaiting coroutine (if any).
      * Each subsequent await() will raise the exception again.
      *
      * Note:
-     * - must be called from a coroutine (not from main context)
-     * - awaiting from several contexts at the same time is not supported
+     * - must be called from a coroutine (not from main stack)
+     * - awaiting from several coroutines at the same time is not supported
      */
     void await();
 
@@ -225,22 +225,22 @@ protected:
     Awaitable();
 
     /**
-     * To be called on completion; yields to awaiting context if any.
+     * To be called on completion; yields to awaiting coroutine if any.
      *
-     * Must be called from main context or bound context.
+     * Must be called from master coroutine or bound coroutine.
      */
     void complete();
 
     /**
-     * To be called on fail; throws exception on awaiting context if any.
+     * To be called on fail; throws exception on awaiting coroutine if any.
      *
-     * Must be called from main context or bound context.
+     * Must be called from master coroutine or bound coroutine.
      */
     void fail(std::exception_ptr eptr);
 
     std::string mTag;
-    StackContext *mBoundContext;
-    StackContext *mAwaitingContext;
+    Coro *mBoundCoro;
+    Coro *mAwaitingCoro;
     Ticket mStartTicket;
     bool mDidComplete;
     std::exception_ptr mExceptionPtr;
@@ -271,26 +271,27 @@ private:
  * @param   stackSize  size of stack to allocate for coroutine
  * @return  an awaitable for managing the asyncronous operation
  *
- * This function prepares func to run as a coroutine. It allocates a StackContext
- * and returns an Awaitable hooked up to the coroutine. By using startAsync() you
- * never need to deal with StackContext.
+ * This function prepares func to run as a coroutine. It allocates a Coro and
+ * returns an Awaitable hooked up to the coroutine. By using startAsync() you
+ * never need to deal directly with Coro.
  *
- * Uncaught exceptions from func -- except for ForcedUnwind -- will pop out on awaiting
- * context.
+ * Uncaught exceptions from func -- except for ForcedUnwind -- will pop out on
+ * awaiting coroutine.
  *
  * If you delete the Awaitable while the func is running (i.e. while it is awaiting
  * some suboperation), the coroutine will resume with a ForcedUnwind exception.
- * It's expected func will exit immediately upon ForcedUnwind, make sure not to ignore
- * it in a catch (...) handler.
+ * It's expected func will exit immediately upon ForcedUnwind, make sure not to
+ * ignore it in a catch (...) handler.
  *
  */
-AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, size_t stackSize = StackContext::defaultStackSize());
+AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, size_t stackSize = Coro::defaultStackSize());
 
 
 /**
  * @name Awaitable selectors
  *
- * Attribute shims that are used by awaitAll() / awaitAny() to extract Awaitables from Collection. You can define your own overloads.
+ * Attribute shims that are used by awaitAll() / awaitAny() to extract Awaitables
+ * from Collection. You can define your own overloads.
  */
 ///@{
 
@@ -340,7 +341,7 @@ Awaitable* selectAwaitable(T& element)
 template <typename Collection>
 void awaitAll(Collection& awaitables)
 {
-    ut_assert_(currentContext() != mainContext());
+    ut_assert_(currentCoro() != masterCoro());
 
     for (auto it = awaitables.begin(); it != awaitables.end(); ++it) {
         Awaitable *awt = selectAwaitable(*it);
@@ -363,7 +364,7 @@ void awaitAll(Collection& awaitables)
 template <typename Collection>
 typename Collection::iterator awaitAny(Collection& awaitables)
 {
-    ut_assert_(currentContext() != mainContext());
+    ut_assert_(currentCoro() != masterCoro());
 
     bool havePendingAwts = false;
 
@@ -386,10 +387,10 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         if (awt == nullptr) {
             continue;
         }
-        awt->mAwaitingContext = currentContext();
+        awt->mAwaitingCoro = currentCoro();
     }
 
-    yieldTo(mainContext());
+    yieldTo(masterCoro());
 
     auto completedPos = awaitables.end();
     Awaitable *completedAwt = nullptr;
@@ -399,7 +400,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         if (awt == nullptr) {
             continue;
         }
-        awt->mAwaitingContext = nullptr;
+        awt->mAwaitingCoro = nullptr;
 
         if (completedAwt == nullptr && awt->isDone()) {
             completedAwt = awt;
@@ -428,7 +429,7 @@ AwaitableHandle asyncAny(Collection& awaitables, typename Collection::iterator& 
 {
     return startAsync("asyncAny", [&awaitables, &pos](Awaitable* /* awtSelf */) {
         if (awaitables.empty()) {
-            yieldTo(mainContext()); // never complete
+            yieldTo(masterCoro()); // never complete
         } else {
             pos = awaitAny(awaitables);
         }
@@ -679,44 +680,40 @@ public:
     }
 
     /**
-     * To be called on completion; yields to awaiting context if any
+     * To be called on completion; yields to awaiting coroutine if any
      *
-     * Must be called from main context or bound context.
+     * Must be called from master coroutine.
      */
     void complete() // not virtual
     {
-        // callable only from main context
-
         ut_assert_(!mTicket);
-        ut_assert_(currentContext() == mainContext());
+        ut_assert_(currentCoro() == masterCoro());
 
         mGuard.block();
         Awaitable::complete();
     }
 
     /**
-     * To be called on fail; throws exception on awaiting context if any
+     * To be called on fail; throws exception on awaiting coroutine if any
      *
-     * Must be called from main context or bound context.
+     * Must be called from master coroutine.
      */
     void fail(std::exception_ptr eptr)  // not virtual
     {
-        // callable only from main context
-
         ut_assert_(!mTicket);
-        ut_assert_(currentContext() == mainContext());
+        ut_assert_(currentCoro() == masterCoro());
 
         mGuard.block();
         Awaitable::fail(eptr);
     }
 
     /**
-     * Schedules complete on main context. May be called from any context.
+     * Schedule complete
+     *
+     * May be called from any coroutine.
      */
     void scheduleComplete()
     {
-        // callable from any stack context
-
         if (!mTicket) {
             mGuard.block();
 
@@ -728,12 +725,12 @@ public:
     }
 
     /**
-     * Schedules fail on main context. May be called from any context.
+     * Schedule fail
+     *
+     * May be called from any coroutine.
      */
     void scheduleFail(std::exception_ptr eptr)
     {
-        // callable from any stack context
-
         if (!mTicket) {
             mGuard.block();
 

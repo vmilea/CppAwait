@@ -27,8 +27,7 @@
 // note: Asio requires some arguments to be valid until callback. This complicates cancellation:
 //       sockets / buffers must be kept alive after calling socket.close() until the callbacks
 //       have run on io_service.
-//       For an interrupted Awaitable, it means the callback may run after its stack context
-//       has been unwinded.
+//       For an interrupted Awaitable, it means the callback may run after it has been deleted.
 //
 //       Workaround:
 //         - CallbackWrapper ignores late callbacks

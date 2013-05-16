@@ -15,7 +15,7 @@
 */
 
 #include "ConfigPrivate.h"
-#include <CppAwait/StackContext.h>
+#include <CppAwait/Coro.h>
 #include <CppAwait/impl/Util.h>
 #include <map>
 #include <algorithm>
@@ -32,27 +32,27 @@ namespace ut {
 
 namespace ctx = boost::context;
 
-static StackContext *sMainContext = nullptr;
-static StackContext *sCurrentContext = nullptr;
+static Coro *sMainCoro = nullptr;
+static Coro *sCurrentCoro = nullptr;
 
 static std::exception_ptr *sForcedUnwindPtr = nullptr;
 static std::exception_ptr *sYieldForbiddenPtr = nullptr;
 
 
 //
-// main/current context
+// master/current coroutine
 //
 
-void initMainContext()
+void initCoro()
 {
     // must be called from main stack
 
-    if (sMainContext != nullptr) {
+    if (sMainCoro != nullptr) {
         return;
     }
 
-    sMainContext = new StackContext();
-    sCurrentContext = sMainContext;
+    sMainCoro = new Coro();
+    sCurrentCoro = sMainCoro;
 
     // make some exception_ptr in advance to avoid problems
     // with std::current_exception() during exception propagation
@@ -66,22 +66,22 @@ void initMainContext()
                 ut::make_exception_ptr(YieldForbidden()));
 }
 
-StackContext* mainContext()
+Coro* masterCoro()
 {
-    if (sCurrentContext == nullptr) {
-        initMainContext();
+    if (sCurrentCoro == nullptr) {
+        initCoro();
     }
 
-    return sMainContext;
+    return sMainCoro;
 }
 
-StackContext* currentContext()
+Coro* currentCoro()
 {
-    if (sCurrentContext == nullptr) {
-        initMainContext();
+    if (sCurrentCoro == nullptr) {
+        initCoro();
     }
 
-    return sCurrentContext;
+    return sCurrentCoro;
 }
 
 
@@ -104,7 +104,7 @@ public:
         StackMap::iterator pos = mStacks.lower_bound(minStackSize);
 
         if (pos == mStacks.end()) {
-            stackSize = StackContext::minimumStackSize();
+            stackSize = Coro::minimumStackSize();
             if (stackSize < minStackSize) {
                 stackSize = minStackSize;
             }
@@ -173,7 +173,7 @@ static StackPool sPool;
 
 std::exception_ptr ForcedUnwind::ptr()
 {
-    ut_assert_(sForcedUnwindPtr != NULL && "not initialized");
+    ut_assert_(sForcedUnwindPtr != nullptr && "not initialized");
 
     return *sForcedUnwindPtr;
 }
@@ -185,29 +185,29 @@ std::exception_ptr ForcedUnwind::ptr()
 
 std::exception_ptr YieldForbidden::ptr()
 {
-    ut_assert_(sYieldForbiddenPtr != NULL && "not initialized");
+    ut_assert_(sYieldForbiddenPtr != nullptr && "not initialized");
 
     return *sYieldForbiddenPtr;
 }
 
 
 //
-// StackContext
+// Stack
 //
 
-size_t StackContext::sDefaultStackSize = 0;
+size_t Coro::sDefaultStackSize = 0;
 
-size_t StackContext::minimumStackSize()
+size_t Coro::minimumStackSize()
 {
     return StackPool::minimumStackSize();
 }
 
-size_t StackContext::maximumStackSize()
+size_t Coro::maximumStackSize()
 {
     return StackPool::maximumStackSize();
 }
 
-size_t StackContext::defaultStackSize()
+size_t Coro::defaultStackSize()
 {
     if (sDefaultStackSize == 0) {
         sDefaultStackSize = StackPool::defaultStackSize();
@@ -216,23 +216,23 @@ size_t StackContext::defaultStackSize()
     return sDefaultStackSize;
 }
 
-void StackContext::setDefaultStackSize(size_t size)
+void Coro::setDefaultStackSize(size_t size)
 {
     sDefaultStackSize = size;
 }
 
-void StackContext::drainContextPool()
+void Coro::drainStackPool()
 {
     sPool.drain();
 }
 
-struct StackContext::Impl
+struct Coro::Impl
 {
     std::string tag;
     std::pair<void *, size_t> stack;
     ctx::fcontext_t *fc;
-    StackContext *parent;
-    StackContext::Coroutine coroutine;
+    Coro *parent;
+    Coro::Func func;
     bool isRunning;
     bool isFullyUnwinded;
 
@@ -245,45 +245,45 @@ struct StackContext::Impl
         , isFullyUnwinded(true) { }
 };
 
-StackContext::StackContext(const std::string& tag, Coroutine coroutine, size_t stackSize)
+Coro::Coro(const std::string& tag, Func func, size_t stackSize)
     : mImpl(new Impl(tag, sPool.obtain(stackSize)))
 {
-    if (sMainContext == nullptr) {
-        initMainContext();
+    if (sMainCoro == nullptr) {
+        initCoro();
     }
 
-    ut_log_verbose_("- create context '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- create coroutine '%s'", mImpl->tag.c_str());
 
-    start(std::move(coroutine));
+    start(std::move(func));
 }
 
-StackContext::StackContext(const std::string& tag, size_t stackSize)
+Coro::Coro(const std::string& tag, size_t stackSize)
     : mImpl(new Impl(tag, sPool.obtain(stackSize)))
 {
-    ut_log_verbose_("- create stack context '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- create coroutine '%s'", mImpl->tag.c_str());
 }
 
-StackContext::StackContext()
+Coro::Coro()
     : mImpl(new Impl("main", std::pair<void *, size_t>(nullptr, 0)))
 {
-    ut_log_verbose_("- create context '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- create coroutine '%s'", mImpl->tag.c_str());
 
     mImpl->fc = new ctx::fcontext_t();
     mImpl->isRunning = true;
     mImpl->isFullyUnwinded = false;
 }
 
-StackContext::~StackContext()
+Coro::~Coro()
 {
     if (mImpl) {
-        ut_log_verbose_("- destroy context '%s'", mImpl->tag.c_str());
+        ut_log_verbose_("- destroy coroutine '%s'", mImpl->tag.c_str());
 
-        if (this != sMainContext) {
-            ut_assert_(!isRunning() && "can't delete a running context");
+        if (this != sMainCoro) {
+            ut_assert_(!isRunning() && "can't delete a running coroutine");
 
             if (!mImpl->isFullyUnwinded) {
-                setParent(currentContext());
-                currentContext()->yieldTo(this);
+                setParent(currentCoro());
+                currentCoro()->yieldTo(this);
             }
 
             sPool.recycle(mImpl->stack.first, mImpl->stack.second);
@@ -291,16 +291,16 @@ StackContext::~StackContext()
             delete mImpl->fc;
         }
     } else {
-        ut_log_verbose_("- destroy moved context");
+        ut_log_verbose_("- destroy moved coroutine");
     }
 }
 
-StackContext::StackContext(StackContext&& other)
+Coro::Coro(Coro&& other)
     : mImpl(std::move(other.mImpl))
 {
 }
 
-StackContext& StackContext::operator=(StackContext&& other)
+Coro& Coro::operator=(Coro&& other)
 {
     if (this != &other) {
         mImpl = std::move(other.mImpl);
@@ -309,70 +309,70 @@ StackContext& StackContext::operator=(StackContext&& other)
     return *this;
 }
 
-const char* StackContext::tag()
+const char* Coro::tag()
 {
     return mImpl->tag.c_str();
 }
 
-bool StackContext::isRunning()
+bool Coro::isRunning()
 {
     return mImpl->isRunning;
 }
 
-void StackContext::start(Coroutine coroutine)
+void Coro::start(Func func)
 {
-    ut_assert_(currentContext() != this);
-    ut_assert_(!isRunning() && "context may not be restarted");
+    ut_assert_(currentCoro() != this);
+    ut_assert_(!isRunning() && "coroutine may not be restarted");
 
-    mImpl->parent = currentContext();
-    mImpl->coroutine = std::move(coroutine);
-    mImpl->fc = ctx::make_fcontext(mImpl->stack.first, mImpl->stack.second, &StackContext::contextFunc);
+    mImpl->parent = currentCoro();
+    mImpl->func = std::move(func);
+    mImpl->fc = ctx::make_fcontext(mImpl->stack.first, mImpl->stack.second, &Coro::fcontextFunc);
 
     mImpl->isRunning = true;
     mImpl->isFullyUnwinded = false;
 
-    currentContext()->implYieldTo(this, YT_RESULT, this);
+    currentCoro()->implYieldTo(this, YT_RESULT, this);
 }
 
-void* StackContext::yield(void *value)
+void* Coro::yield(void *value)
 {
     return yieldTo(mImpl->parent, value);
 }
 
-void* StackContext::yieldTo(StackContext *resumeContext, void *value)
+void* Coro::yieldTo(Coro *resumeCoro, void *value)
 {
-    ut_log_info_("- jumping from '%s' to '%s'", sCurrentContext->tag(), resumeContext->tag());
+    ut_log_info_("- jumping from '%s' to '%s'", sCurrentCoro->tag(), resumeCoro->tag());
 
-    return implYieldTo(resumeContext, YT_RESULT, value);
+    return implYieldTo(resumeCoro, YT_RESULT, value);
 }
 
-void* StackContext::yieldException(std::exception_ptr eptr)
+void* Coro::yieldException(std::exception_ptr eptr)
 {
     return yieldExceptionTo(mImpl->parent, eptr);
 }
 
-void* StackContext::yieldExceptionTo(StackContext *resumeContext, std::exception_ptr eptr)
+void* Coro::yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr)
 {
-    ut_log_info_("- jumping from '%s' to '%s' (exception)", sCurrentContext->tag(), resumeContext->tag());
+    ut_log_info_("- jumping from '%s' to '%s' (exception)", sCurrentCoro->tag(), resumeCoro->tag());
 
-    return implYieldTo(resumeContext, YT_EXCEPTION, &eptr);
+    return implYieldTo(resumeCoro, YT_EXCEPTION, &eptr);
 }
 
-void* StackContext::implYieldTo(StackContext *resumeContext, YieldType type, void *value)
+void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
 {
-    ut_assert_(sCurrentContext == this);
-    ut_assert_(resumeContext != nullptr);
-    ut_assert_(resumeContext != this);
-    ut_assert_(!(resumeContext->mImpl->isFullyUnwinded));
+    ut_assert_(sCurrentCoro == this);
+    ut_assert_(resumeCoro != nullptr);
+    ut_assert_(resumeCoro != this);
+    ut_assert_(!(resumeCoro->mImpl->isFullyUnwinded));
 
-    // ut_log_info_("-- jumping to '%s', type = %s", resumeContext->tag(), (type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
+    // ut_log_info_("-- jumping to '%s', type = %s", resumeCoro->tag(), (type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
-    sCurrentContext = resumeContext;
+    sCurrentCoro = resumeCoro;
 
     YieldValue ySent(type, value);
-    auto yReceived = (YieldValue *) ctx::jump_fcontext(mImpl->fc, resumeContext->mImpl->fc, (intptr_t) &ySent);
+    auto yReceived = (YieldValue *) ctx::jump_fcontext(mImpl->fc, resumeCoro->mImpl->fc, (intptr_t) &ySent);
 
-    // ut_log_info_("-- back to '%s', type = %s", sCurrentContext->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
+    // ut_log_info_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
     if (yReceived->type == YT_EXCEPTION) {
         auto exPtr = (std::exception_ptr *) yReceived->value;
@@ -388,35 +388,35 @@ void* StackContext::implYieldTo(StackContext *resumeContext, YieldType type, voi
     }
 }
 
-StackContext* StackContext::parent()
+Coro* Coro::parent()
 {
     return mImpl->parent;
 }
 
-void StackContext::setParent(StackContext *context)
+void Coro::setParent(Coro *coro)
 {
-    ut_assert_(context != nullptr);
-    ut_assert_(context != this);
+    ut_assert_(coro != nullptr);
+    ut_assert_(coro != this);
 
-    mImpl->parent = context;
+    mImpl->parent = coro;
 }
 
-void StackContext::contextFunc(intptr_t data)
+void Coro::fcontextFunc(intptr_t data)
 {
-    auto context = (StackContext *) ((YieldValue *) data)->value;
+    auto coro = (Coro *) ((YieldValue *) data)->value;
 
     std::exception_ptr *peptr = nullptr;
     try {
-        void *value = context->implYieldTo(context->parent(), YT_RESULT, nullptr);
+        void *value = coro->implYieldTo(coro->parent(), YT_RESULT, nullptr);
 
-        ut_log_debug_("- context '%s' func starting", context->tag());
-        context->mImpl->coroutine(value);
-        ut_log_debug_("- context '%s' func done", context->tag());
+        ut_log_debug_("- coroutine '%s' func starting", coro->tag());
+        coro->mImpl->func(value);
+        ut_log_debug_("- coroutine '%s' func done", coro->tag());
 
     } catch (const ForcedUnwind&) {
-        ut_log_debug_("- context '%s' func done (forced unwind)", context->tag());
+        ut_log_debug_("- coroutine '%s' func done (forced unwind)", coro->tag());
     } catch (...) {
-        ut_log_debug_("- context '%s' func done (exception)", context->tag());
+        ut_log_debug_("- coroutine '%s' func done (exception)", coro->tag());
 
         ut_assert_(!std::uncaught_exception() && "may not throw from Coroutine while another exception is propagating");
 
@@ -427,29 +427,29 @@ void StackContext::contextFunc(intptr_t data)
         peptr = new std::exception_ptr(eptr);
     }
 
-    context->mImpl->isRunning = false;
+    coro->mImpl->isRunning = false;
 
     if (peptr != nullptr) {
         // Yielding an exception is trickier because we need to get back here
-        // in order to delete the exception_ptr. To make this work the context
+        // in order to delete the exception_ptr. To make this work the coroutine
         // briefly resumes in destructor if isFullyUnwinded false.
 
         try {
-            context->yieldException(*peptr);
+            coro->yieldException(*peptr);
         } catch (...) {
             ut_assert_(false && "post run exception");
         }
 
-        ut_log_debug_("- context '%s' unwinding", context->tag());
+        ut_log_debug_("- coroutine '%s' unwinding", coro->tag());
         delete peptr;
     }
 
-    // all remaining objects on stack have trivial destructors, context considered fully unwinded
+    // all remaining objects on stack have trivial destructors, coroutine if considered fully unwinded
 
     try {
-        context->mImpl->isFullyUnwinded = true;
-        context->yield();
-        ut_assert_(false && "yielded back to fully unwinded context");
+        coro->mImpl->isFullyUnwinded = true;
+        coro->yield();
+        ut_assert_(false && "yielded back to fully unwinded coroutine");
     } catch (...) {
         ut_assert_(false && "post run exception");
     }

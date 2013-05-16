@@ -212,7 +212,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
 
                 page++;
             }
-        } catch (std::exception& e) { // exceptions get propagated into awaiting context
+        } catch (std::exception& e) { // exceptions get propagated into awaiting coroutine
             printf ("Download failed: %s - %s\n", typeid(e).name(), e.what());
         } catch (...) {
             printf ("Download failed: unknown exception\n");

@@ -140,7 +140,7 @@ static ut::AwaitableHandle asyncHttpDownload(const std::string& host, const std:
             std::ofstream fout(savePath.c_str(), std::ios::out | std::ios::binary);
             fout << response.get();
         } catch (std::exception& e) {
-            // exceptions get propagated into awaiting context
+            // exceptions get propagated into awaiting coroutine
 
             printf ("HTTP download failed: %s\n", e.what());
         }
