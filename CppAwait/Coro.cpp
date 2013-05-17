@@ -66,6 +66,15 @@ void initCoro()
                 ut::make_exception_ptr(YieldForbidden()));
 }
 
+Coro* currentCoro()
+{
+    if (sCurrentCoro == nullptr) {
+        initCoro();
+    }
+
+    return sCurrentCoro;
+}
+
 Coro* masterCoro()
 {
     if (sCurrentCoro == nullptr) {
@@ -75,13 +84,15 @@ Coro* masterCoro()
     return sMainCoro;
 }
 
-Coro* currentCoro()
+ReplaceMasterCoro::ReplaceMasterCoro(Coro *coro)
 {
-    if (sCurrentCoro == nullptr) {
-        initCoro();
-    }
+    mPreviousCoro = masterCoro();
+    sMainCoro = coro;
+}
 
-    return sCurrentCoro;
+ReplaceMasterCoro::~ReplaceMasterCoro()
+{
+    sMainCoro = mPreviousCoro;
 }
 
 
@@ -254,7 +265,7 @@ Coro::Coro(const std::string& tag, Func func, size_t stackSize)
 
     ut_log_verbose_("- create coroutine '%s'", mImpl->tag.c_str());
 
-    start(std::move(func));
+    init(std::move(func));
 }
 
 Coro::Coro(const std::string& tag, size_t stackSize)
@@ -319,10 +330,10 @@ bool Coro::isRunning()
     return mImpl->isRunning;
 }
 
-void Coro::start(Func func)
+void Coro::init(Func func)
 {
     ut_assert_(currentCoro() != this);
-    ut_assert_(!isRunning() && "coroutine may not be restarted");
+    ut_assert_(!isRunning() && "coroutine already initialized");
 
     mImpl->parent = currentCoro();
     mImpl->func = std::move(func);
@@ -330,8 +341,6 @@ void Coro::start(Func func)
 
     mImpl->isRunning = true;
     mImpl->isFullyUnwinded = false;
-
-    currentCoro()->implYieldTo(this, YT_RESULT, this);
 }
 
 void* Coro::yield(void *value)
@@ -374,8 +383,13 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
 
     // ut_log_info_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
-    if (yReceived->type == YT_EXCEPTION) {
-        auto exPtr = (std::exception_ptr *) yReceived->value;
+    return unpackYieldValue(*yReceived);
+}
+
+void* Coro::unpackYieldValue(const YieldValue& yReceived)
+{
+    if (yReceived.type == YT_EXCEPTION) {
+        auto exPtr = (std::exception_ptr *) yReceived.value;
 
         ut_assert_(exPtr != nullptr);
         ut_assert_(!(*exPtr == std::exception_ptr()));
@@ -383,8 +397,8 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
         std::rethrow_exception(*exPtr);
         return nullptr;
     } else {
-        ut_assert_(yReceived->type == YT_RESULT);
-        return yReceived->value;
+        ut_assert_(yReceived.type == YT_RESULT);
+        return yReceived.value;
     }
 }
 
@@ -403,16 +417,17 @@ void Coro::setParent(Coro *coro)
 
 void Coro::fcontextFunc(intptr_t data)
 {
-    auto coro = (Coro *) ((YieldValue *) data)->value;
+    Coro *coro = sCurrentCoro;
 
     std::exception_ptr *peptr = nullptr;
     try {
-        void *value = coro->implYieldTo(coro->parent(), YT_RESULT, nullptr);
-
         ut_log_debug_("- coroutine '%s' func starting", coro->tag());
-        coro->mImpl->func(value);
-        ut_log_debug_("- coroutine '%s' func done", coro->tag());
 
+        auto yInitial = (YieldValue *) data;
+        void *value = coro->unpackYieldValue(*yInitial);
+        coro->mImpl->func(value);
+
+        ut_log_debug_("- coroutine '%s' func done", coro->tag());
     } catch (const ForcedUnwind&) {
         ut_log_debug_("- coroutine '%s' func done (forced unwind)", coro->tag());
     } catch (...) {

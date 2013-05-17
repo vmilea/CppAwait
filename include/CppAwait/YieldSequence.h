@@ -51,7 +51,7 @@ public:
         : mCoro("YieldSequence")
         , mCurrentValue(nullptr)
     {
-        mCoro.start([=](void *startValue) {
+        mCoro.init([=](void *startValue) {
             func(startValue);
             mCurrentValue = YS_DONE;
         });

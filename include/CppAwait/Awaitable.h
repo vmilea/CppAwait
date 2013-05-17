@@ -241,7 +241,6 @@ protected:
     std::string mTag;
     Coro *mBoundCoro;
     Coro *mAwaitingCoro;
-    Ticket mStartTicket;
     bool mDidComplete;
     std::exception_ptr mExceptionPtr;
     OnDoneSignal mOnDone;

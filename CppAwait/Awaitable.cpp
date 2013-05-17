@@ -109,12 +109,7 @@ Awaitable::~Awaitable()
 
     if (didComplete() || didFail()) {
         ut_assert_(mAwaitingCoro == nullptr);
-        ut_assert_(!mStartTicket);
     } else {
-        if (mStartTicket) {
-            ut_assert_(mAwaitingCoro == nullptr);
-            mStartTicket.reset(); // cancel action
-        }
         if (mAwaitingCoro != nullptr) {
             // can't print awaiting coroutine tag since it may have been deleted
             // (e.g. a persistent Completable may outlive its awaiter)
@@ -131,10 +126,10 @@ Awaitable::~Awaitable()
 
             ut_assert_(mBoundCoro->isRunning());
 
-            // override parent to get back here after unwinding bound coroutine
-            mBoundCoro->setParent(currentCoro());
-            // resume coroutine, force fail() via ForcedUnwind 
-            forceUnwind(mBoundCoro);
+            { ReplaceMasterCoro _; // take over
+                // resume coroutine, force fail() via ForcedUnwind
+                forceUnwind(mBoundCoro);
+            }
         } else {
             fail(YieldForbidden::ptr());
         }
@@ -166,20 +161,7 @@ void Awaitable::await()
     if (!mDidComplete) {
         mAwaitingCoro = currentCoro();
 
-        if (mBoundCoro == nullptr) {
-            // No bound coroutine, go back to main loop.
-            yieldTo(masterCoro());
-        } else if (!mStartTicket) {
-            // Bound coroutine already started through main loop. This can happen
-            // if we awaited some other Awaitable before this one and the main loop
-            // had time to spin.
-            yieldTo(masterCoro());
-        } else {
-            // Since we need to yield anyway, bound coroutine can be started
-            // immediately instead of going through main loop.
-            mStartTicket.reset(); // cancel action
-            yieldTo(mBoundCoro);
-        }
+        yieldTo(masterCoro());
 
         ut_assert_(isDone());
 
@@ -322,6 +304,9 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
             // wait until coroutine fully unwinded before yielding to awaiter
             awt->mBoundCoro->setParent(awt->mAwaitingCoro);
             awt->mAwaitingCoro = nullptr;
+        } else {
+            // wait until coroutine fully unwinded before yielding to master
+            awt->mBoundCoro->setParent(masterCoro());
         }
 
         if (eptr == std::exception_ptr()) {
@@ -334,14 +319,12 @@ AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, si
         // are stored in the Awaitable and get rethrown by await().
     }, stackSize);
 
-    coro->setParent(masterCoro());
     awt->mBoundCoro = coro;
 
-    // defer start until current coroutine suspends itself
-    awt->mStartTicket = scheduleWithTicket([awt] {
-        awt->mStartTicket.reset();
-        yieldTo(awt->mBoundCoro);
-    });
+    { ReplaceMasterCoro _; // take over
+         // run coro until it awaits or finishes
+         yieldTo(coro);
+    }
 
     return AwaitableHandle(awt);
 }

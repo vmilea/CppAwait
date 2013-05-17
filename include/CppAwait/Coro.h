@@ -94,7 +94,7 @@ public:
     static void drainStackPool();
 
     /**
-     * Create and start a coroutine
+     * Create and initialize a coroutine
      * @param tag        identifier for debugging
      * @param func       coroutine body, may yield()
      * @param stackSize  size of stack
@@ -120,11 +120,11 @@ public:
     /** Identifier for debugging */
     const char* tag();
 
-    /** Returns true if coroutine is running */
+    /** Returns true after init() until func returns */
     bool isRunning();
 
-    /** Start coroutine. Note, func is not entered until resumed via yield() */
-    void start(Func func);
+    /** Initialize coroutine. Note, func is not entered until resumed via yield() */
+    void init(Func func);
 
     /**
      * Suspend self, return value to parent coroutine
@@ -187,6 +187,7 @@ private:
     Coro& operator=(const Coro& other);  // noncopyable
 
     void* implYieldTo(Coro *resumeCoro, YieldType type, void *value);
+    void* unpackYieldValue(const YieldValue& yReceived);
 
     struct Impl;
     std::unique_ptr<Impl> mImpl;
@@ -202,11 +203,25 @@ private:
 /** Initialize coroutine library. Must be called once from main stack. */
 void initCoro();
 
+/** Returns the current coroutine */
+Coro* currentCoro();
+
 /** Returns the master coroutine */
 Coro* masterCoro();
 
-/** Returns the current coroutine */
-Coro* currentCoro();
+/** Temporarily replace master coroutine */
+class ReplaceMasterCoro
+{
+public:
+    ReplaceMasterCoro(Coro *coro = currentCoro());
+    ~ReplaceMasterCoro();
+
+private:
+    ReplaceMasterCoro(const ReplaceMasterCoro& other); // noncopyable
+    ReplaceMasterCoro& operator=(const ReplaceMasterCoro& other); // noncopyable
+
+    Coro *mPreviousCoro;
+};
 
 //
 // yield helpers
@@ -215,25 +230,29 @@ Coro* currentCoro();
 /** Helper function, yields from current coroutine */
 inline void* yield(void *value = nullptr)
 {
-    return currentCoro()->yield(value);
+    void *received = currentCoro()->yield(value);
+    return received;
 }
 
 /** Helper function, yields from current coroutine */
 inline void* yieldTo(Coro *resumeCoro, void *value = nullptr)
 {
-    return currentCoro()->yieldTo(resumeCoro, value);
+    void *received = currentCoro()->yieldTo(resumeCoro, value);
+    return received;
 }
 
 /** Helper function, yields from current coroutine */
 inline void* yieldException(std::exception_ptr eptr)
 {
-    return currentCoro()->yieldException(eptr);
+    void *received = currentCoro()->yieldException(eptr);
+    return received;
 }
 
 /** Helper function, yields from current coroutine */
 inline void* yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr)
 {
-    return currentCoro()->yieldExceptionTo(resumeCoro, eptr);
+    void *received = currentCoro()->yieldExceptionTo(resumeCoro, eptr);
+    return received;
 }
 
 /**
@@ -245,7 +264,8 @@ inline void* yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr)
 template <typename T>
 void* yieldException(const T& e)
 {
-    return currentCoro()->yieldException(ut::make_exception_ptr(e));
+    void *received = currentCoro()->yieldException(ut::make_exception_ptr(e));
+    return received;
 }
 
 /**
@@ -257,7 +277,8 @@ void* yieldException(const T& e)
 template <typename T>
 void* yieldExceptionTo(Coro *resumeCoro, const T& e)
 {
-    return currentCoro()->yieldExceptionTo(resumeCoro, ut::make_exception_ptr(e));
+    void *received = currentCoro()->yieldExceptionTo(resumeCoro, ut::make_exception_ptr(e));
+    return received;
 }
 
 //
