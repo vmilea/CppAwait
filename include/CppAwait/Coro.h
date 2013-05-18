@@ -99,14 +99,14 @@ public:
      * @param func       coroutine body, may yield()
      * @param stackSize  size of stack
      */
-    Coro(const std::string& tag, Func func, size_t stackSize = defaultStackSize());
+    Coro(std::string tag, Func func, size_t stackSize = defaultStackSize());
 
     /**
      * Create a coroutine
      * @param tag        identifier for debugging
      * @param stackSize  size of stack
      */
-    Coro(const std::string& tag, size_t stackSize = defaultStackSize());
+    Coro(std::string tag, size_t stackSize = defaultStackSize());
 
     /** Destroy coroutine. It is illegal to call the destructor of a running coroutine */
     ~Coro();
@@ -192,7 +192,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> mImpl;
 
-    friend void initCoro();
+    friend void initCoroLib();
 };
 
 
@@ -201,7 +201,7 @@ private:
 //
 
 /** Initialize coroutine library. Must be called once from main stack. */
-void initCoro();
+void initCoroLib();
 
 /** Returns the current coroutine */
 Coro* currentCoro();
@@ -209,18 +209,18 @@ Coro* currentCoro();
 /** Returns the master coroutine */
 Coro* masterCoro();
 
-/** Temporarily replace master coroutine */
-class ReplaceMasterCoro
+/** Temporarily makes current coroutine the master */
+class PushMasterCoro
 {
 public:
-    ReplaceMasterCoro(Coro *coro = currentCoro());
-    ~ReplaceMasterCoro();
+    PushMasterCoro();
+    ~PushMasterCoro();
 
 private:
-    ReplaceMasterCoro(const ReplaceMasterCoro& other); // noncopyable
-    ReplaceMasterCoro& operator=(const ReplaceMasterCoro& other); // noncopyable
+    PushMasterCoro(const PushMasterCoro& other); // noncopyable
+    PushMasterCoro& operator=(const PushMasterCoro& other); // noncopyable
 
-    Coro *mPreviousCoro;
+    Coro *mPushedCoro;
 };
 
 //

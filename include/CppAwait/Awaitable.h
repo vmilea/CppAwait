@@ -34,7 +34,6 @@
 #include <memory>
 #include <stdexcept>
 #include <functional>
-#include <vector>
 #include <array>
 
 namespace ut {
@@ -201,7 +200,7 @@ public:
     const char* tag();
 
     /** Sets an identifier for debugging */
-    void setTag(const std::string& tag);
+    void setTag(std::string tag);
 
     /**
      * Associate some custom data with this awaitable
@@ -222,7 +221,7 @@ public:
 
 protected:
     /** Protected constructor */
-    Awaitable();
+    Awaitable(std::string tag);
 
     /**
      * To be called on completion; yields to awaiting coroutine if any.
@@ -255,7 +254,7 @@ private:
     template <typename Collection>
     friend typename Collection::iterator awaitAny(Collection& awaitables);
 
-    friend AwaitableHandle startAsync(const std::string& tag, AsyncFunc func, size_t stackSize);
+    friend AwaitableHandle startAsync(std::string tag, AsyncFunc func, size_t stackSize);
 };
 
 
@@ -283,7 +282,7 @@ private:
  * ignore it in a catch (...) handler.
  *
  */
-AwaitableHandle startAsync(const std::string& tag, Awaitable::AsyncFunc func, size_t stackSize = Coro::defaultStackSize());
+AwaitableHandle startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize = Coro::defaultStackSize());
 
 
 /**
@@ -670,75 +669,38 @@ public:
     };
 
     /** Default constructor */
-    Completable() { }
+    Completable();
 
     /** Create a named completable */
-    Completable(const std::string& tag)
-    {
-        setTag(tag);
-    }
+    Completable(std::string tag);
 
     /**
      * To be called on completion; yields to awaiting coroutine if any
      *
      * Must be called from master coroutine.
      */
-    void complete() // not virtual
-    {
-        ut_assert_(!mTicket);
-        ut_assert_(currentCoro() == masterCoro());
-
-        mGuard.block();
-        Awaitable::complete();
-    }
+    void complete(); // not virtual
 
     /**
      * To be called on fail; throws exception on awaiting coroutine if any
      *
      * Must be called from master coroutine.
      */
-    void fail(std::exception_ptr eptr)  // not virtual
-    {
-        ut_assert_(!mTicket);
-        ut_assert_(currentCoro() == masterCoro());
-
-        mGuard.block();
-        Awaitable::fail(eptr);
-    }
+    void fail(std::exception_ptr eptr);  // not virtual
 
     /**
      * Schedule complete
      *
      * May be called from any coroutine.
      */
-    void scheduleComplete()
-    {
-        if (!mTicket) {
-            mGuard.block();
-
-            mTicket = scheduleWithTicket([this]() {
-                mTicket.reset();
-                complete();
-            });
-        }
-    }
+    void scheduleComplete();
 
     /**
      * Schedule fail
      *
      * May be called from any coroutine.
      */
-    void scheduleFail(std::exception_ptr eptr)
-    {
-        if (!mTicket) {
-            mGuard.block();
-
-            mTicket = scheduleWithTicket([this, eptr]() {
-                mTicket.reset();
-                fail(eptr);
-            });
-        }
-    }
+    void scheduleFail(std::exception_ptr eptr);
 
     /**
      * Returns a token that may be used to check whether the Callable is done
@@ -750,10 +712,7 @@ public:
      * a Callable that is no longer valid. Note, wrap() already handles this
      * and is simpler to use.
      */
-    CallbackGuard::Token getGuardToken()
-    {
-        return mGuard.getToken();
-    }
+    CallbackGuard::Token getGuardToken();
 
     /**
      * Wraps a callback function
@@ -774,7 +733,6 @@ public:
 
 private:
     CallbackGuard mGuard;
-    Ticket mTicket;
 };
 
 //

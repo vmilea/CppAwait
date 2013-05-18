@@ -87,16 +87,16 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
         do {
             if (sMsgQueue.empty()) {
                 sAwtMsgQueued->await(); // yield until we have outbound messages
-                sAwtMsgQueued.reset(new ut::Completable());
+                sAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
             } else {
                 MessageCRef msg = sMsgQueue.front();
                 sMsgQueue.pop();
 
+                ut::AwaitableHandle awt = ut::asio::asyncWrite(socket, msg);
+                awt->await(); // yield until message delivered
+
                 if (*msg == "/leave\n") {
                     quit = true;
-                } else {
-                    ut::AwaitableHandle awt = ut::asio::asyncWrite(socket, msg);
-                    awt->await(); // yield until message delivered
                 }
             }
         } while (!quit);
@@ -132,7 +132,7 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
             // read keyboard input on a different thread to keep main loop responsive
             thread inputThread(&inputFunc);
             inputThread.detach();
-            sAwtMsgQueued.reset(new ut::Completable());
+            sAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
 
             // this coroutine reads & prints inbound messages
             ut::AwaitableHandle awtReader = ut::startAsync("chatClient-reader", [=, &socket](ut::Awaitable *awtSelf) {

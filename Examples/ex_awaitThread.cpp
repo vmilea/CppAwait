@@ -34,12 +34,10 @@ using namespace loo::lchrono;
 static ut::AwaitableHandle asyncCountdown()
 {
     return ut::startAsync("asyncCountdown", [](ut::Awaitable * /* awtSelf */) {
-        ut::Coro *coro = ut::currentCoro();
-
         timed_mutex mutex;
         condition_variable_any cond;
         bool isInterrupted = false;
-        ut::Ticket completionTicket;
+        ut::Completable awtLiftoff("evt-liftoff");
 
         thread countdownThread([&]() {
             unique_lock<timed_mutex> lock(mutex);
@@ -57,22 +55,17 @@ static ut::AwaitableHandle asyncCountdown()
             } else {
                 printf ("liftoff!\n");
 
-                // MSVC10 workaround, inner lambda can't access captured variable
-                timed_mutex& lambdaMutex = mutex;
-
-                // resume awaitable, yield must be called from main thread
-                completionTicket = ut::scheduleWithTicket([&]() {
-                    { lock_guard<timed_mutex> _(lambdaMutex);
-                        completionTicket.reset();
-                    }
-                    ut::yieldTo(coro);
-                });
+                // Safe coroutine resumal. It's possible (but unlikely) for the coroutine to
+                // get interrupted before resumal. To handle this, scheduled functor checks if
+                // awtLiftoff is still valid before completing it.
+                //
+                awtLiftoff.scheduleComplete();
             }
         });
 
         try {
             // suspend until liftoff or abort
-            ut::yield();
+            awtLiftoff.await();
         } catch (const ut::ForcedUnwind&) {
             printf ("aborting liftoff...\n");
 
@@ -84,9 +77,6 @@ static ut::AwaitableHandle asyncCountdown()
 
         countdownThread.join();
         printf ("\njoined countdown thread\n");
-
-        // It's possible (but unlikely) for the interrupt to arrive too late to abort liftoff.
-        // Ticket acts as a failsafe at scope end, ensuring completion-lambda gets canceled.
     });
 }
 
@@ -102,12 +92,14 @@ static ut::AwaitableHandle asyncKey()
             readLine();
 
             ut::schedule([&]() {
+                // vulnerable to coro being destroyed in the meantime
                 ut::yieldTo(coro);
             });
         });
 
 
         try {
+            // ok -- yield explicitly to master context
             ut::yield();
 
             keyThread.join();

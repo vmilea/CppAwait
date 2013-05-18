@@ -18,6 +18,7 @@
 #include <CppAwait/Coro.h>
 #include <CppAwait/impl/Util.h>
 #include <map>
+#include <vector>
 #include <algorithm>
 #include <boost/version.hpp>
 #include <boost/context/all.hpp>
@@ -32,7 +33,7 @@ namespace ut {
 
 namespace ctx = boost::context;
 
-static Coro *sMainCoro = nullptr;
+static std::vector<Coro *> sMasterCoroChain;
 static Coro *sCurrentCoro = nullptr;
 
 static std::exception_ptr *sForcedUnwindPtr = nullptr;
@@ -43,16 +44,16 @@ static std::exception_ptr *sYieldForbiddenPtr = nullptr;
 // master/current coroutine
 //
 
-void initCoro()
+void initCoroLib()
 {
     // must be called from main stack
 
-    if (sMainCoro != nullptr) {
-        return;
-    }
+    ut_assert_(sCurrentCoro == nullptr && "library already initialized");
 
-    sMainCoro = new Coro();
-    sCurrentCoro = sMainCoro;
+    Coro *mainCoro = new Coro();
+
+    sMasterCoroChain.push_back(mainCoro);
+    sCurrentCoro = mainCoro;
 
     // make some exception_ptr in advance to avoid problems
     // with std::current_exception() during exception propagation
@@ -69,7 +70,7 @@ void initCoro()
 Coro* currentCoro()
 {
     if (sCurrentCoro == nullptr) {
-        initCoro();
+        initCoroLib();
     }
 
     return sCurrentCoro;
@@ -78,21 +79,52 @@ Coro* currentCoro()
 Coro* masterCoro()
 {
     if (sCurrentCoro == nullptr) {
-        initCoro();
+        initCoroLib();
     }
 
-    return sMainCoro;
+    return sMasterCoroChain.back();
 }
 
-ReplaceMasterCoro::ReplaceMasterCoro(Coro *coro)
+PushMasterCoro::PushMasterCoro()
 {
-    mPreviousCoro = masterCoro();
-    sMainCoro = coro;
+    if (masterCoro() == sCurrentCoro) {
+        mPushedCoro = nullptr;
+        return;
+    }
+
+    ut_log_verbose_("-- push '%s' as master, replacing '%s'", sCurrentCoro->tag(), masterCoro()->tag());
+
+    sMasterCoroChain.push_back(sCurrentCoro);
+    mPushedCoro = sCurrentCoro;
 }
 
-ReplaceMasterCoro::~ReplaceMasterCoro()
+PushMasterCoro::~PushMasterCoro()
 {
-    sMainCoro = mPreviousCoro;
+    if (mPushedCoro == nullptr) {
+        return;
+    }
+
+    if (sMasterCoroChain.back() == mPushedCoro) { // optimize common case
+        sMasterCoroChain.pop_back();
+
+        ut_log_verbose_("-- pop '%s', '%s' is now master", mPushedCoro->tag(), masterCoro()->tag());
+    } else {
+        for (auto it = sMasterCoroChain.end(); it != sMasterCoroChain.begin(); ) {
+            --it;
+
+            if (*it == mPushedCoro) {
+                sMasterCoroChain.erase(it);
+
+                ut_log_verbose_("-- pop '%s', '%s' is now master", mPushedCoro->tag(), masterCoro()->tag());
+                return;
+            } else {
+                ut_log_verbose_("-- keep '%s'...", (*it)->tag());
+            }
+        }
+
+        ut_log_warn_("-- couldn't pop '%s' from master coro chain", mPushedCoro->tag());
+        ut_assert_(false);
+    }
 }
 
 
@@ -247,8 +279,8 @@ struct Coro::Impl
     bool isRunning;
     bool isFullyUnwinded;
 
-    Impl(const std::string& tag, const std::pair<void *, size_t>& stack)
-        : tag(tag)
+    Impl(std::string&& tag, const std::pair<void *, size_t>& stack)
+        : tag(std::move(tag))
         , stack(stack)
         , fc(nullptr)
         , parent(nullptr)
@@ -256,28 +288,28 @@ struct Coro::Impl
         , isFullyUnwinded(true) { }
 };
 
-Coro::Coro(const std::string& tag, Func func, size_t stackSize)
-    : mImpl(new Impl(tag, sPool.obtain(stackSize)))
+Coro::Coro(std::string tag, Func func, size_t stackSize)
+    : mImpl(new Impl(std::move(tag), sPool.obtain(stackSize)))
 {
-    if (sMainCoro == nullptr) {
-        initCoro();
+    if (sCurrentCoro == nullptr) {
+        initCoroLib();
     }
 
-    ut_log_verbose_("- create coroutine '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- new coroutine '%s'", mImpl->tag.c_str());
 
     init(std::move(func));
 }
 
-Coro::Coro(const std::string& tag, size_t stackSize)
-    : mImpl(new Impl(tag, sPool.obtain(stackSize)))
+Coro::Coro(std::string tag, size_t stackSize)
+    : mImpl(new Impl(std::move(tag), sPool.obtain(stackSize)))
 {
-    ut_log_verbose_("- create coroutine '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- new coroutine '%s'", mImpl->tag.c_str());
 }
 
 Coro::Coro()
-    : mImpl(new Impl("main", std::pair<void *, size_t>(nullptr, 0)))
+    : mImpl(new Impl(std::string("main"), std::pair<void *, size_t>(nullptr, 0)))
 {
-    ut_log_verbose_("- create coroutine '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- new coroutine '%s'", mImpl->tag.c_str());
 
     mImpl->fc = new ctx::fcontext_t();
     mImpl->isRunning = true;
@@ -289,7 +321,7 @@ Coro::~Coro()
     if (mImpl) {
         ut_log_verbose_("- destroy coroutine '%s'", mImpl->tag.c_str());
 
-        if (this != sMainCoro) {
+        if (this != sMasterCoroChain[0]) {
             ut_assert_(!isRunning() && "can't delete a running coroutine");
 
             if (!mImpl->isFullyUnwinded) {
@@ -301,8 +333,6 @@ Coro::~Coro()
         } else {
             delete mImpl->fc;
         }
-    } else {
-        ut_log_verbose_("- destroy moved coroutine");
     }
 }
 
@@ -350,7 +380,7 @@ void* Coro::yield(void *value)
 
 void* Coro::yieldTo(Coro *resumeCoro, void *value)
 {
-    ut_log_info_("- jumping from '%s' to '%s'", sCurrentCoro->tag(), resumeCoro->tag());
+    ut_log_debug_("- '%s' > '%s'", sCurrentCoro->tag(), resumeCoro->tag());
 
     return implYieldTo(resumeCoro, YT_RESULT, value);
 }
@@ -362,7 +392,7 @@ void* Coro::yieldException(std::exception_ptr eptr)
 
 void* Coro::yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr)
 {
-    ut_log_info_("- jumping from '%s' to '%s' (exception)", sCurrentCoro->tag(), resumeCoro->tag());
+    ut_log_debug_("- '%s' > '%s' (exception)", sCurrentCoro->tag(), resumeCoro->tag());
 
     return implYieldTo(resumeCoro, YT_EXCEPTION, &eptr);
 }
@@ -374,14 +404,14 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
     ut_assert_(resumeCoro != this);
     ut_assert_(!(resumeCoro->mImpl->isFullyUnwinded));
 
-    // ut_log_info_("-- jumping to '%s', type = %s", resumeCoro->tag(), (type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
+    // ut_log_debug_("-- jumping to '%s', type = %s", resumeCoro->tag(), (type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
     sCurrentCoro = resumeCoro;
 
     YieldValue ySent(type, value);
     auto yReceived = (YieldValue *) ctx::jump_fcontext(mImpl->fc, resumeCoro->mImpl->fc, (intptr_t) &ySent);
 
-    // ut_log_info_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
+    // ut_log_debug_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
     return unpackYieldValue(*yReceived);
 }
@@ -421,17 +451,17 @@ void Coro::fcontextFunc(intptr_t data)
 
     std::exception_ptr *peptr = nullptr;
     try {
-        ut_log_debug_("- coroutine '%s' func starting", coro->tag());
+        ut_log_debug_("- { '%s'", coro->tag());
 
         auto yInitial = (YieldValue *) data;
         void *value = coro->unpackYieldValue(*yInitial);
         coro->mImpl->func(value);
 
-        ut_log_debug_("- coroutine '%s' func done", coro->tag());
+        ut_log_debug_("- } '%s'", coro->tag());
     } catch (const ForcedUnwind&) {
-        ut_log_debug_("- coroutine '%s' func done (forced unwind)", coro->tag());
+        ut_log_debug_("- } '%s' (forced unwind)", coro->tag());
     } catch (...) {
-        ut_log_debug_("- coroutine '%s' func done (exception)", coro->tag());
+        ut_log_debug_("- } '%s' (exception)", coro->tag());
 
         ut_assert_(!std::uncaught_exception() && "may not throw from Coroutine while another exception is propagating");
 
@@ -455,7 +485,7 @@ void Coro::fcontextFunc(intptr_t data)
             ut_assert_(false && "post run exception");
         }
 
-        ut_log_debug_("- coroutine '%s' unwinding", coro->tag());
+        ut_log_debug_("- '%s' unwinding", coro->tag());
         delete peptr;
     }
 

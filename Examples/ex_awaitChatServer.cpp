@@ -85,12 +85,15 @@ public:
 
     void broadcast(const std::string& sender, const std::string& line)
     {
-        if (mRecentMsgs.size() == MAX_RECENT_MSGS) {
-            mRecentMsgs.pop_front();
-        }
-
         MessageCRef msgRef = packMessage(sender, line);
-        mRecentMsgs.push_back(msgRef);
+
+        if (MAX_RECENT_MSGS > 0) {
+            if (mRecentMsgs.size() == MAX_RECENT_MSGS) {
+                mRecentMsgs.pop_front();
+            }
+
+            mRecentMsgs.push_back(msgRef);
+        }
 
         ut_foreach_(Guest *guest, mGuests) {
             guest->deliver(msgRef);
@@ -112,7 +115,7 @@ public:
         : mRoom(room)
         , mSocket(std::make_shared<tcp::socket>(ut::asio::io()))
     {
-        mAwtMsgQueued.reset(new ut::Completable());
+        mAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
     }
 
     // deleting the session will interrupt the coroutine
@@ -127,8 +130,12 @@ public:
     {
         mMsgQueue.push(msg);
 
-        // wake up writer. scheduleComplete() must be used because we're not on master coroutine
-        mAwtMsgQueued->scheduleComplete();
+        { ut::PushMasterCoro _; // take over
+            // wake up writer
+            if (!mAwtMsgQueued->didComplete()) {
+                mAwtMsgQueued->complete();
+            }
+        }
     }
 
     std::shared_ptr<tcp::socket> socket()
@@ -150,7 +157,7 @@ public:
             do {
                 if (mMsgQueue.empty()) {
                     mAwtMsgQueued->await(); // yield until we have outbound messages
-                    mAwtMsgQueued.reset(new ut::Completable());
+                    mAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
                 } else {
                     MessageCRef msg = mMsgQueue.front();
                     mMsgQueue.pop();

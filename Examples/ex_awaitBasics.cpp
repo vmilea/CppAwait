@@ -31,8 +31,12 @@
 static ut::AwaitableHandle asyncSimpleDelay(long delay)
 {
     // on calling coroutine
+
     ut::Completable *awt = new ut::Completable();
-    
+
+    // awaitables can be tagged to ease debugging
+    awt->setTag(ut::string_printf("simple-delay-%ld", delay));
+
     // Schedule completion after delay milliseconds. Exactly what triggers
     // completion is an implementation detail -- here we use an Asio
     // deadline_timer. The only thing that matters is to call complete()
@@ -54,9 +58,6 @@ static ut::AwaitableHandle asyncSimpleDelay(long delay)
     awt->connectToDone([timer](ut::Awaitable *awt) {
         delete timer; // posts error::operation_aborted
     });
-
-    // awaitables can be tagged to ease debugging
-    awt->setTag(ut::string_printf("simple-delay-%ld", delay));
 
     return ut::AwaitableHandle(awt);
 }
