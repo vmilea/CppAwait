@@ -175,7 +175,7 @@ void Awaitable::await()
 
     if (m->didComplete) {
         ut_log_debug_("* await '%s' from '%s' (done)", tag(), currentCoro()->tag());
-    } else if (!(m->exceptionPtr == std::exception_ptr())) {
+    } else if (is(m->exceptionPtr)) {
         ut_log_debug_("* await '%s' from '%s' (done - exception)", tag(), currentCoro()->tag());
 
         std::rethrow_exception(m->exceptionPtr);
@@ -188,7 +188,7 @@ void Awaitable::await()
         ut_assert_(isDone());
         m->awaitingCoro = nullptr;
 
-        if (!(m->exceptionPtr == std::exception_ptr())) {
+        if (is(m->exceptionPtr)) {
             std::rethrow_exception(m->exceptionPtr);
         }
     }
@@ -201,7 +201,7 @@ bool Awaitable::didComplete()
 
 bool Awaitable::didFail()
 {
-    return !(m->exceptionPtr == std::exception_ptr());
+    return is(m->exceptionPtr);
 }
 
 bool Awaitable::isDone()
@@ -230,7 +230,7 @@ void Awaitable::fail(std::exception_ptr eptr)
 {
     ut_assert_(!didFail() && "already failed");
     ut_assert_(!didComplete() && "can't fail, already complete");
-    ut_assert_(!(eptr == std::exception_ptr()) && "invalid exception_ptr");
+    ut_assert_(is(eptr) && "invalid exception_ptr");
     m->exceptionPtr = eptr;
 
     m->onDone(this);
@@ -335,7 +335,7 @@ void Completable::scheduleComplete()
 
 void Completable::scheduleFail(std::exception_ptr eptr)
 {
-    CallbackGuard::Token token = mGuard.getToken();
+    CallbackGuard::Token token = getGuardToken();
 
     schedule([this, token, eptr]() {
         if (!token.isBlocked()) {
@@ -382,7 +382,7 @@ AwaitableHandle startAsync(std::string tag, Awaitable::AsyncFunc func, size_t st
             ut_assert_(!std::uncaught_exception() && "may not throw from AsyncFunc while another exception is propagating");
 
             eptr = std::current_exception();
-            ut_assert_(!(eptr == std::exception_ptr()));
+            ut_assert_(is(eptr));
         }
 
         ut_assert_(!awt->didFail());
@@ -397,10 +397,10 @@ AwaitableHandle startAsync(std::string tag, Awaitable::AsyncFunc func, size_t st
             awt->m->boundCoro->setParent(masterCoro());
         }
 
-        if (eptr == std::exception_ptr()) {
-            awt->complete(); // mAwaitingCoro is null, won't yield
-        } else {
+        if (is(eptr)) {
             awt->fail(eptr); // mAwaitingCoro is null, won't yield
+        } else {
+            awt->complete(); // mAwaitingCoro is null, won't yield
         }
 
         // This function will never throw an exception. Instead, exceptions

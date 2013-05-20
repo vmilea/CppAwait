@@ -22,7 +22,7 @@
 
 namespace ut {
 
-// MSVC10 workaround -- no make_exception_ptr()
+// MSVC10 workaround -- no std::make_exception_ptr()
 //
 template <typename T>
 std::exception_ptr make_exception_ptr(const T& e)
@@ -42,7 +42,14 @@ std::exception_ptr make_exception_ptr(const T& e)
     return eptr;
 }
 
-// MSVC10 workaround -- no declval()
+// MSVC10 workaround -- no conversion from std::exception_ptr to bool
+//
+inline bool is(const std::exception_ptr& eptr)
+{
+    return eptr != std::exception_ptr();
+}
+
+// MSVC10 workaround -- no std::declval()
 //
 template <typename T> T&& declval();
 

@@ -400,7 +400,7 @@ void* Coro::unpackYieldValue(const YieldValue& yReceived)
         auto exPtr = (std::exception_ptr *) yReceived.value;
 
         ut_assert_(exPtr != nullptr);
-        ut_assert_(!(*exPtr == std::exception_ptr()));
+        ut_assert_(is(*exPtr));
 
         std::rethrow_exception(*exPtr);
         return nullptr;
@@ -444,7 +444,7 @@ void Coro::fcontextFunc(intptr_t data)
         ut_assert_(!std::uncaught_exception() && "may not throw from Coroutine while another exception is propagating");
 
         std::exception_ptr eptr = std::current_exception();
-        ut_assert_(!(eptr == std::exception_ptr()));
+        ut_assert_(is(eptr));
 
         // [MSVC] may not yield from catch block
         peptr = new std::exception_ptr(eptr);

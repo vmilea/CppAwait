@@ -616,10 +616,10 @@ public:
         if (!mGuardToken.isBlocked()) { \
             std::exception_ptr eptr = mCallback(__VA_ARGS__); \
             \
-            if (eptr == std::exception_ptr()) { \
-                mCompletable->complete(); \
-            } else { \
+            if (is(eptr)) { \
                 mCompletable->fail(eptr); \
+            } else { \
+                mCompletable->complete(); \
             } \
         }
 
