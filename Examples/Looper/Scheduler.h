@@ -30,7 +30,7 @@ protected:
     AbstractScheduler() { }
 public:
     virtual ~AbstractScheduler() { }
-    
+
     virtual void schedule(const ut::Action& action) = 0;
 
     virtual void schedule(ut::Action&& action)

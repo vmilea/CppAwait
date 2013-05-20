@@ -58,9 +58,9 @@ struct FlickrPhotos
 static FlickrPhotos parseFlickrResponse(streambuf& response)
 {
     namespace pt = boost::property_tree;
-    
+
     FlickrPhotos result;
-    
+
     std::stringstream ss;
     ss << &response;
     pt::ptree ptree;
@@ -102,9 +102,9 @@ static std::pair<std::string, std::string> makeFlickrQueryUrl(const std::vector<
 {
     const std::string HOST = "api.flickr.com";
     const std::string API_KEY = "e36784df8a03fea04c22ed93318b291c";
-    
+
     std::string path = "/services/rest/?method=flickr.photos.search&format=rest&api_key=" + API_KEY;
-    
+
     path += "&tags=" + tags[0];
     for (size_t i = 1; i < tags.size(); i++) {
         path += "+" + tags[i];
@@ -126,14 +126,14 @@ static std::pair<std::string, std::string> makeFlickrPhotoUrl(const FlickrPhoto&
     return std::make_pair(host, path);
 }
 
-static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& tags, int numPics, int numPicsPerPage)
+static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, int numPics, int numPicsPerPage)
 {
     static const int MAX_PARALLEL_DOWNLOADS = 6;
 
     return ut::startAsync("asyncFlickrDownload", [tags, numPics, numPicsPerPage](ut::Awaitable * /* awtSelf */) {
         struct DownloadSlot
         {
-            ut::AwaitableHandle awaitable;
+            std::unique_ptr<ut::Awaitable> awaitable;
             std::shared_ptr<streambuf> buf;
             FlickrPhoto *photo;
 
@@ -157,20 +157,22 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
                 auto photoUrl = makeFlickrPhotoUrl(photo);
                 printf (" fetching %s%s ...\n", photoUrl.first.c_str(), photoUrl.second.c_str());
 
-                pos->awaitable = ut::asio::asyncHttpDownload(photoUrl.first, photoUrl.second, pos->buf);
+                ut::Awaitable awt = ut::asio::asyncHttpDownload(photoUrl.first, photoUrl.second, pos->buf);
+
+                pos->awaitable = ut::make_unique<ut::Awaitable>(std::move(awt));
                 pos->photo = &photo;
 
                 numSlotsUsed++;
                 totalPicsRemaining--;
             };
-            
+
             while (totalPicsRemaining > 0) {
                 // download a page
                 auto queryUrl = makeFlickrQueryUrl(tags, numPicsPerPage, page);
                 auto response = std::make_shared<streambuf>();
-                ut::AwaitableHandle awt = ut::asio::asyncHttpDownload(queryUrl.first, queryUrl.second, response); 
-                awt->await();
-                
+                ut::Awaitable awt = ut::asio::asyncHttpDownload(queryUrl.first, queryUrl.second, response); 
+                awt.await();
+
                 // parse xml
                 FlickrPhotos resp = parseFlickrResponse(*response);
 
@@ -194,7 +196,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
                 while (numSlotsUsed > 0) {
                     DownloadSlots::iterator pos = ut::awaitAny(dlslots);
                     pos->awaitable->await(); // won't yield again, just check for exception
-                    
+
                     std::string savePath = pos->photo->id + ".jpg";
                     std::ofstream fout(savePath, std::ios::binary);
                     fout << pos->buf.get();
@@ -204,7 +206,7 @@ static ut::AwaitableHandle asyncFlickrDownload(const std::vector<std::string>& t
                     pos->awaitable = nullptr;
                     pos->photo = nullptr;
                     numSlotsUsed--;
-                
+
                     if (itPagePhotos != resp.photos.end() && totalPicsRemaining > 0) {
                         startFetch(pos, *itPagePhotos++);
                     }
@@ -232,12 +234,12 @@ void ex_awaitFlickr()
     boost::split(splitTags, tags, boost::is_space());
     splitTags.resize(
         std::remove(splitTags.begin(), splitTags.end(), "") - splitTags.begin());
-    
+
     if (splitTags.empty()) {
         splitTags.push_back("kitten");
     }
 
-    ut::AwaitableHandle awt = asyncFlickrDownload(splitTags, 25, 10);
+    ut::Awaitable awt = asyncFlickrDownload(splitTags, 25, 10);
 
     // loops until all async handlers have ben dispatched
     ut::asio::io().run();

@@ -31,7 +31,7 @@ using namespace boost::asio::ip;
 
 static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse, size_t& outContentLength)
 {
-    ut::AwaitableHandle awt;
+    ut::Awaitable awt;
 
     tcp::resolver resolver(ut::asio::io());
     tcp::resolver::query query(host, "http");
@@ -41,7 +41,7 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
     awt = ut::asio::asyncResolve(resolver, query, itEndpoints);
 
     printf ("resolving %s ...\n", host.c_str());
-    awt->await();
+    awt.await();
 
     // connect
     for (tcp::resolver::iterator it = itEndpoints, end = tcp::resolver::iterator(); it != end; ++it) {
@@ -50,7 +50,7 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
 
         printf ("attempting connect to %s ...\n", ep.address().to_string().c_str());
         try {
-            awt->await(); // connected!
+            awt.await(); // connected!
             break;
         } catch (...) {
             // try next endpoint
@@ -72,11 +72,11 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
     requestStream << "Connection: close\r\n\r\n";
 
     awt = ut::asio::asyncWrite(socket, request);
-    awt->await();
+    awt.await();
 
     // read first response line
     awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n"));
-    awt->await();
+    awt.await();
 
     std::istream responseStream(outResponse.get());
     std::string httpVersion;
@@ -95,7 +95,7 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
 
     // read response headers
     awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n\r\n"));
-    awt->await();
+    awt.await();
 
     // process headers
     std::string header;
@@ -118,7 +118,7 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
     }
 }
 
-static ut::AwaitableHandle asyncHttpDownload(const std::string& host, const std::string& path, const std::string& savePath)
+static ut::Awaitable asyncHttpDownload(const std::string& host, const std::string& path, const std::string& savePath)
 {
     return ut::startAsync("asyncHttpDownload", [host, path, savePath](ut::Awaitable * /* awtSelf */) {
         tcp::socket socket(ut::asio::io());
@@ -131,8 +131,8 @@ static ut::AwaitableHandle asyncHttpDownload(const std::string& host, const std:
             doAsyncHttpGetHeader(socket, host, path, response, contentLength);
 
             // transfer remaining content
-            ut::AwaitableHandle awt = ut::asio::asyncRead(socket, response, transfer_exactly(contentLength - response->size()), numBytesTransferred);
-            awt->await();
+            ut::Awaitable awt = ut::asio::asyncRead(socket, response, transfer_exactly(contentLength - response->size()), numBytesTransferred);
+            awt.await();
 
             printf("saving %ld bytes to file '%s' ...\n", (long) response->size(), savePath.c_str());
 
@@ -172,7 +172,7 @@ void ex_awaitHttpClient()
         return true;
     }, 0, 5);
 
-    ut::AwaitableHandle awt = asyncHttpDownload("www.google.com", "/images/srpr/logo3w.png", "download.png");
+    ut::Awaitable awt = asyncHttpDownload("www.google.com", "/images/srpr/logo3w.png", "download.png");
 
     mainLooper.run();
 }

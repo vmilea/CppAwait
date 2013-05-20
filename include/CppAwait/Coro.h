@@ -243,14 +243,14 @@ inline void* yieldTo(Coro *resumeCoro, void *value = nullptr)
 /** Helper function, yields from current coroutine */
 inline void* yieldException(std::exception_ptr eptr)
 {
-    void *received = currentCoro()->yieldException(eptr);
+    void *received = currentCoro()->yieldException(std::move(eptr));
     return received;
 }
 
 /** Helper function, yields from current coroutine */
 inline void* yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr)
 {
-    void *received = currentCoro()->yieldExceptionTo(resumeCoro, eptr);
+    void *received = currentCoro()->yieldExceptionTo(resumeCoro, std::move(eptr));
     return received;
 }
 

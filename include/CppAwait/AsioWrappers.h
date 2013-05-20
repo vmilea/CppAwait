@@ -19,7 +19,6 @@
 #include "Config.h"
 #include "Awaitable.h"
 #include "misc/OpaqueSharedPtr.h"
-#include "misc/CallbackGuard.h"
 #include <boost/asio.hpp>
 
 // experimental Boost.Asio wrappers
@@ -55,153 +54,153 @@ inline std::exception_ptr eptr(const boost::system::error_code& ec)
 
 
 template <typename Timer>
-inline AwaitableHandle asyncWait(Timer& timer)
+inline Awaitable asyncWait(Timer& timer)
 {
-    auto awt = new ut::Completable("asyncWait");
+    ut::Awaitable awt("asyncWait");
 
     timer.async_wait(
-                     awt->wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+                     awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename DurationType>
-AwaitableHandle asyncDelay(const DurationType& delay)
+Awaitable asyncDelay(const DurationType& delay)
 {
-    auto awt = new ut::Completable("asyncDelay");
+    ut::Awaitable awt("asyncDelay");
 
     auto timer = new boost::asio::deadline_timer(io(), delay);
 
     timer->async_wait(
-                      awt->wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+                      awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
         return eptr(ec);
     }));
 
-    awt->connectToDone([timer](Awaitable *awt) {
+    awt.connectToDone([timer](Awaitable *awt) {
         delete timer;
     });
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename Resolver>
-inline AwaitableHandle asyncResolve(Resolver& resolver, const typename Resolver::query& query, typename Resolver::iterator& outEndpoints)
+inline Awaitable asyncResolve(Resolver& resolver, const typename Resolver::query& query, typename Resolver::iterator& outEndpoints)
 {
     typedef typename Resolver::iterator ResolverIterator;
 
-    auto awt = new ut::Completable("asyncResolve");
+    ut::Awaitable awt("asyncResolve");
 
     resolver.async_resolve(query,
-                           awt->wrap([&](const boost::system::error_code& ec, ResolverIterator it) -> std::exception_ptr {
+                           awt.wrap([&](const boost::system::error_code& ec, ResolverIterator it) -> std::exception_ptr {
         outEndpoints = it;
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 
 template <typename Socket>
-inline AwaitableHandle asyncConnect(Socket& socket, const typename Socket::endpoint_type& endpoint)
+inline Awaitable asyncConnect(Socket& socket, const typename Socket::endpoint_type& endpoint)
 {
-    auto awt = new ut::Completable("asyncConnect");
+    ut::Awaitable awt("asyncConnect");
 
     socket.async_connect(endpoint,
-                         awt->wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+                         awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 
 template <typename Socket, typename Iterator>
-inline AwaitableHandle asyncConnect(Socket& socket, Iterator begin, Iterator& outConnected)
+inline Awaitable asyncConnect(Socket& socket, Iterator begin, Iterator& outConnected)
 {
-    auto awt = new ut::Completable("asyncConnect");
+    ut::Awaitable awt("asyncConnect");
 
     boost::asio::async_connect(socket, begin,
-                               awt->wrap([&](const boost::system::error_code& ec, Iterator iterator) -> std::exception_ptr {
+                               awt.wrap([&](const boost::system::error_code& ec, Iterator iterator) -> std::exception_ptr {
         outConnected = iterator;
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 
 template <typename Acceptor, typename PeerSocket>
-inline AwaitableHandle asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer)
+inline Awaitable asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer)
 {
-    auto awt = new ut::Completable("asyncAccept");
+    ut::Awaitable awt("asyncAccept");
 
     acceptor.async_accept(*peer,
-                          awt->wrap([peer](const boost::system::error_code& ec) -> std::exception_ptr {
+                          awt.wrap([peer](const boost::system::error_code& ec) -> std::exception_ptr {
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename Acceptor, typename PeerSocket>
-inline AwaitableHandle asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer, std::shared_ptr<typename Acceptor::endpoint_type> peerEndpoint)
+inline Awaitable asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer, std::shared_ptr<typename Acceptor::endpoint_type> peerEndpoint)
 {
-    auto awt = new ut::Completable("asyncAccept");
+    ut::Awaitable awt("asyncAccept");
 
     acceptor.async_accept(*peer, *peerEndpoint,
-                          awt->wrap([peer, peerEndpoint](const boost::system::error_code& ec) {
+                          awt.wrap([peer, peerEndpoint](const boost::system::error_code& ec) {
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 
 template <typename AsyncWriteStream, typename ConstBufferSequence, typename CompletionCondition>
-inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence& buffers, OpaqueSharedPtr masterBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+inline Awaitable asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence& buffers, OpaqueSharedPtr masterBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
 {
-    auto awt = new ut::Completable("asyncWrite");
+    ut::Awaitable awt("asyncWrite");
 
     boost::asio::async_write(stream, buffers, completionCondition,
-                             awt->wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
+                             awt.wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename AsyncWriteStream, typename ConstBufferSequence>
-inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence& buffers, OpaqueSharedPtr masterBuffer)
+inline Awaitable asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence& buffers, OpaqueSharedPtr masterBuffer)
 {
     static size_t bytesTransferred;
     return asyncWrite(stream, buffers, std::move(masterBuffer), boost::asio::transfer_all(), bytesTransferred);
 }
 
 template <typename AsyncWriteStream, typename Buffer>
-inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<Buffer> buffer)
+inline Awaitable asyncWrite(AsyncWriteStream& stream, std::shared_ptr<Buffer> buffer)
 {
     return asyncWrite(stream, boost::asio::buffer(*buffer), OpaqueSharedPtr(buffer));
 }
 
 template <typename AsyncWriteStream, typename Allocator, typename CompletionCondition>
-inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > buffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+inline Awaitable asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > buffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
 {
-    auto awt = new ut::Completable("asyncWrite");
+    ut::Awaitable awt("asyncWrite");
 
     boost::asio::async_write(stream, *buffer, completionCondition,
-                             awt->wrap([&, buffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
+                             awt.wrap([&, buffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename AsyncWriteStream, typename Allocator>
-inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > buffer)
+inline Awaitable asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > buffer)
 {
     static size_t bytesTransferred;
     return asyncWrite(stream, std::move(buffer), boost::asio::transfer_all(), bytesTransferred);
@@ -209,75 +208,75 @@ inline AwaitableHandle asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boos
 
 
 template <typename AsyncReadStream, typename MutableBufferSequence, typename CompletionCondition>
-inline AwaitableHandle asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffers, OpaqueSharedPtr masterBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+inline Awaitable asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffers, OpaqueSharedPtr masterBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
 {
-    auto awt = new ut::Completable("asyncRead");
+    ut::Awaitable awt("asyncRead");
 
     boost::asio::async_read(stream, outBuffers, completionCondition,
-                            awt->wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
+                            awt.wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename AsyncReadStream, typename MutableBufferSequence>
-inline AwaitableHandle asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffer, OpaqueSharedPtr masterBuffer)
+inline Awaitable asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffer, OpaqueSharedPtr masterBuffer)
 {
     static size_t bytesTransferred;
     return asyncRead(stream, outBuffer, std::move(masterBuffer), boost::asio::transfer_all(), bytesTransferred);
 }
 
 template <typename AsyncReadStream, typename Buffer>
-inline AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<Buffer> buffer)
+inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<Buffer> buffer)
 {
     return asyncRead(stream, boost::asio::buffer(*buffer), OpaqueSharedPtr(buffer));
 }
 
 template <typename AsyncReadStream, typename Allocator, typename CompletionCondition>
-inline AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
+inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, CompletionCondition completionCondition, std::size_t& outBytesTransferred)
 {
-    auto awt = new ut::Completable("asyncRead");
+    ut::Awaitable awt("asyncRead");
 
     boost::asio::async_read(stream, *outBuffer, completionCondition,
-                            awt->wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
+                            awt.wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename AsyncReadStream, typename Allocator>
-inline AwaitableHandle asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer)
+inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer)
 {
     static size_t bytesTransferred;
     return asyncRead(stream, std::move(outBuffer), boost::asio::transfer_all(), bytesTransferred);
 }
 
 template <typename AsyncReadStream, typename Allocator, typename Condition>
-inline AwaitableHandle asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, const Condition& condition, std::size_t& outBytesTransferred)
+inline Awaitable asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, const Condition& condition, std::size_t& outBytesTransferred)
 {
-    auto awt = new ut::Completable("asyncReadUntil");
+    ut::Awaitable awt("asyncReadUntil");
 
     boost::asio::async_read_until(stream, *outBuffer, condition,
-                                  awt->wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
+                                  awt.wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
         return eptr(ec);
     }));
 
-    return AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 template <typename AsyncReadStream, typename Allocator, typename Condition>
-inline AwaitableHandle asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, const Condition& condition)
+inline Awaitable asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, const Condition& condition)
 {
     static size_t bytesTransferred;
     return asyncReadUntil(stream, std::move(outBuffer), condition, bytesTransferred);
 }
 
 
-AwaitableHandle asyncHttpDownload(const std::string& host, const std::string& path, std::shared_ptr<boost::asio::streambuf> outResponse);
+Awaitable asyncHttpDownload(const std::string& host, const std::string& path, std::shared_ptr<boost::asio::streambuf> outResponse);
 
 } }

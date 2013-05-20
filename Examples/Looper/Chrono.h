@@ -20,7 +20,7 @@
 #include "Thread.h"
 
 namespace loo {
-    
+
 typedef lchrono::time_point<lchrono::high_resolution_clock, lchrono::microseconds> Timepoint;
 
 //

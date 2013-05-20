@@ -26,14 +26,14 @@
 
 // simple awaitable without coroutine
 //
-static ut::AwaitableHandle asyncSimpleDelay(long delay)
+static ut::Awaitable asyncSimpleDelay(long delay)
 {
     // on calling coroutine
 
-    ut::Completable *awt = new ut::Completable();
+    ut::Awaitable awt;
 
     // awaitables can be tagged to ease debugging
-    awt->setTag(ut::string_printf("simple-delay-%ld", delay));
+    awt.setTag(ut::string_printf("simple-delay-%ld", delay));
 
     // Schedule completion after delay milliseconds. Exactly what triggers
     // completion is an implementation detail -- here we use an Asio
@@ -43,28 +43,31 @@ static ut::AwaitableHandle asyncSimpleDelay(long delay)
     auto timer = new boost::asio::deadline_timer(
         ut::asio::io(), boost::posix_time::milliseconds(delay));
 
-    timer->async_wait([awt](const boost::system::error_code& ec) {
+    ut::Completer completer = awt.takeCompleter();
+
+    timer->async_wait([completer](const boost::system::error_code& ec) {
         // on master coroutine (io_service)
 
-        if (ec == boost::asio::error::operation_aborted) {
-            return; // awt is already destroyed
-        }
-        awt->complete(); // yields to awaiting coroutine
+        // Awaitable may have been destroyed and the timer interrupted
+        // (ec = error::operation_aborted), in which case completer
+        // does nothing.
+
+        completer(); // yields to awaiting coroutine unless done
     });
 
     // cancel timer if interrupted
-    awt->connectToDone([timer](ut::Awaitable *awt) {
+    awt.connectToDone([timer](ut::Awaitable *awt) {
         delete timer; // posts error::operation_aborted
     });
 
-    return ut::AwaitableHandle(awt);
+    return std::move(awt);
 }
 
 // Awaitable with dedicated coroutine. While in a coroutine you may yield.
 // await() simply means 'yield until task is done'. It does not block, instead
 // it yields to main loop if necessary until task done.
 //
-static ut::AwaitableHandle asyncCoroDelay(long delay)
+static ut::Awaitable asyncCoroDelay(long delay)
 {
     // on calling coroutine
     std::string tag = ut::string_printf("coro-delay-%ld", delay);
@@ -73,11 +76,11 @@ static ut::AwaitableHandle asyncCoroDelay(long delay)
         // on 'coro-delay' coroutine
         printf ("'%s' - start\n", ut::currentCoro()->tag());
 
-        ut::AwaitableHandle awt = asyncSimpleDelay(delay);
+        ut::Awaitable awt = asyncSimpleDelay(delay);
 
         // free to do other stuff...
 
-        awt->await(); // yield until awt done
+        awt.await(); // yield until awt done
 
         printf ("'%s' - done\n", ut::currentCoro()->tag());
     });
@@ -85,26 +88,23 @@ static ut::AwaitableHandle asyncCoroDelay(long delay)
 
 // test coroutine
 //
-static ut::AwaitableHandle asyncTest()
+static ut::Awaitable asyncTest()
 {
     return ut::startAsync("test", [](ut::Awaitable *self) {
         // on 'test' coroutine
         printf ("'%s' - start\n", ut::currentCoro()->tag());
 
         // it's trivial to compose awaitables
-        std::array<ut::AwaitableHandle, 3> awts = { {
+        std::array<ut::Awaitable, 3> awts = { {
             asyncSimpleDelay(400),
             asyncCoroDelay(300),
             asyncCoroDelay(800)
         } };
         ut::awaitAll(awts);
-        
+
         printf ("'%s' - done\n", ut::currentCoro()->tag());
 
         ut::asio::io().stop();
-
-        // AwaitableHandle is a unique_ptr<Awaitable>. When awaitable gets
-        // destroyed it releases bound coroutine (if any).
     });
 }
 
@@ -117,13 +117,13 @@ void ex_awaitBasics()
     // here we run on top of Boost.Asio io_service
     ut::initScheduler(&asioSchedule);
 
-    ut::AwaitableHandle awtTest = asyncTest();
+    ut::Awaitable awtTest = asyncTest();
 
     // print every 100ms to show main loop is not blocked
-    ut::AwaitableHandle awtTicker = ut::startAsync("ticker", [](ut::Awaitable *self) {
+    ut::Awaitable awtTicker = ut::startAsync("ticker", [](ut::Awaitable *self) {
         while (true) {
-            ut::AwaitableHandle awt = asyncSimpleDelay(100);
-            awt->await();
+            ut::Awaitable awt = asyncSimpleDelay(100);
+            awt.await();
 
             printf ("...\n");
         }

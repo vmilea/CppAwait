@@ -88,22 +88,22 @@ static void fetchStocks_asyncAwait(const std::string& host, const std::string& p
     // setup a scheduler on top of Boost.Asio io_service
     ut::initScheduler(&asioSchedule);
 
-    ut::AwaitableHandle awt = ut::startAsync("asyncFetchStocks", [&](ut::Awaitable * /* awtSelf */) {
+    ut::Awaitable awt = ut::startAsync("asyncFetchStocks", [&](ut::Awaitable * /* awtSelf */) {
         try {
-            ut::AwaitableHandle awt;
+            ut::Awaitable awt;
 
             tcp::resolver resolver(ut::asio::io());
             tcp::resolver::query query(tcp::v4(), host, port);
 
             tcp::resolver::iterator itEndpoints;
             awt = ut::asio::asyncResolve(resolver, query, itEndpoints);
-            awt->await();
+            awt.await();
 
             tcp::socket socket(ut::asio::io());
 
             tcp::resolver::iterator itConnected;
             awt = ut::asio::asyncConnect(socket, itEndpoints, itConnected);
-            awt->await();
+            awt.await();
 
             auto requestBuf = std::make_shared<boost::asio::streambuf>();
             auto replyBuf = std::make_shared<boost::asio::streambuf>();
@@ -116,11 +116,11 @@ static void fetchStocks_asyncAwait(const std::string& host, const std::string& p
                 std::ostream os(requestBuf.get());
                 os << symbol << "\n";
                 awt = ut::asio::asyncWrite(socket, requestBuf);
-                awt->await();
+                awt.await();
 
                 // read price
                 awt = ut::asio::asyncReadUntil(socket, replyBuf, std::string("\n"));
-                awt->await();
+                awt.await();
                 std::istream is(replyBuf.get());
                 is >> price;
                 is.ignore(1, '\n'); // consume newline
@@ -130,7 +130,7 @@ static void fetchStocks_asyncAwait(const std::string& host, const std::string& p
 
             // end session
             awt = ut::asio::asyncWrite(socket, std::make_shared<std::string>("\n"));
-            awt->await();
+            awt.await();
         } catch (const std::exception& e) {
             fprintf (stderr, "Failed: %s - %s\n", typeid(e).name(), e.what());
         }

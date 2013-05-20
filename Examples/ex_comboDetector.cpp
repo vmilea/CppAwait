@@ -47,14 +47,14 @@ const std::string BUTTON_MASH = "xxy-xyyx-yxx";
 static void coComboDetector(void *startValue)
 {
     std::list<size_t> matches;
-    
+
     auto resetMatches = [&]() {
         matches.clear();
         for (size_t i = 0; i < COMBOS.size(); i++) {
             matches.push_back(i);
         }
     };
-    resetMatches();    
+    resetMatches();
 
     size_t chrPos = 0;
     auto chr = (char *) startValue;
@@ -67,7 +67,7 @@ static void coComboDetector(void *startValue)
         } else if (*chr == 'x' || *chr == 'y') { // filter matches
             for (auto it = matches.begin(); it != matches.end() ; ) {
                 const std::string& combo = COMBOS[*it];
-            
+
                 if (chrPos >= combo.size() || *chr != combo[chrPos]) {
                     it = matches.erase(it);
                 } else {

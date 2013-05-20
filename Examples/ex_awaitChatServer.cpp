@@ -113,10 +113,7 @@ class ClientSession : public Guest
 public:
     ClientSession(ChatRoom& room)
         : mRoom(room)
-        , mSocket(std::make_shared<tcp::socket>(ut::asio::io()))
-    {
-        mAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
-    }
+        , mSocket(std::make_shared<tcp::socket>(ut::asio::io())) { }
 
     // deleting the session will interrupt the coroutine
     ~ClientSession() { }
@@ -132,9 +129,7 @@ public:
 
         { ut::PushMasterCoro _; // take over
             // wake up writer
-            if (!mAwtMsgQueued->didComplete()) {
-                mAwtMsgQueued->complete();
-            }
+            mEvtMsgQueued();
         }
     }
 
@@ -143,9 +138,9 @@ public:
         return mSocket;
     }
 
-    ut::Awaitable* awaitable()
+    ut::Awaitable& awaitable()
     {
-        return mAwt.get();
+        return mAwt;
     }
 
     void start()
@@ -156,14 +151,16 @@ public:
         ut::Awaitable::AsyncFunc writer = [this](ut::Awaitable * /* awtSelf */) {
             do {
                 if (mMsgQueue.empty()) {
-                    mAwtMsgQueued->await(); // yield until we have outbound messages
-                    mAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
+                    ut::Awaitable awtMsgQueued("evt-msg-queued");
+                    mEvtMsgQueued = awtMsgQueued.takeCompleter();
+
+                    awtMsgQueued.await(); // yield until we have outbound messages
                 } else {
                     MessageCRef msg = mMsgQueue.front();
                     mMsgQueue.pop();
 
-                    ut::AwaitableHandle awt = ut::asio::asyncWrite(*mSocket, msg);
-                    awt->await(); // yield until message delivered
+                    ut::Awaitable awt = ut::asio::asyncWrite(*mSocket, msg);
+                    awt.await(); // yield until message delivered
                 }
             } while (true);
         };
@@ -174,8 +171,8 @@ public:
 
             bool quit = false;
             do {
-                ut::AwaitableHandle awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
-                awt->await(); // yield until we have inbound messages
+                ut::Awaitable awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
+                awt.await(); // yield until we have inbound messages
 
                 std::istream recvStream(recv.get());
                 std::getline(recvStream, line);
@@ -191,22 +188,22 @@ public:
         // main coroutine handles handshake, reads & writes
         mAwt = ut::startAsync("clientSession-start", [this, writer, reader, recv](ut::Awaitable * /* awtSelf */) {
             // first message is nickname
-            ut::AwaitableHandle awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
-            awt->await();
+            ut::Awaitable awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
+            awt.await();
             std::istream recvStream(recv.get());
             std::getline(recvStream, mNickname);
 
             mRoom.join(this);
 
-            ut::AwaitableHandle awtReader = ut::startAsync("clientSession-reader", reader);
-            ut::AwaitableHandle awtWriter = ut::startAsync("clientSession-writer", writer);
+            ut::Awaitable awtReader = ut::startAsync("clientSession-reader", reader);
+            ut::Awaitable awtWriter = ut::startAsync("clientSession-writer", writer);
 
             // yield until /leave or Asio exception
-            ut::AwaitableHandle& done = ut::awaitAny(awtReader, awtWriter);
+            ut::Awaitable& done = ut::awaitAny(awtReader, awtWriter);
 
             mRoom.leave(this);
 
-            done->await(); // check for exception, won't yield again since already done
+            done.await(); // check for exception, won't yield again since already done
         });
     }
 
@@ -214,20 +211,20 @@ private:
     ChatRoom& mRoom;
 
     std::shared_ptr<tcp::socket> mSocket;
-    ut::AwaitableHandle mAwt;
+    ut::Awaitable mAwt;
     std::string mNickname;
 
     std::queue<MessageCRef> mMsgQueue;
-    std::unique_ptr<ut::Completable> mAwtMsgQueued;
+    ut::Completer mEvtMsgQueued;
 };
 
 // attribute shim for acessing the Awaitable of a ClientSession, used by ut::asyncAny()
 inline ut::Awaitable* selectAwaitable(std::unique_ptr<ClientSession>& element)
 {
-    return element->awaitable();
+    return &(element->awaitable());
 }
 
-static ut::AwaitableHandle asyncChatServer(unsigned short port)
+static ut::Awaitable asyncChatServer(unsigned short port)
 {
     // main coroutine manages client sessions
     return ut::startAsync("asyncChatServer", [port](ut::Awaitable * /* awtSelf */) {
@@ -248,12 +245,12 @@ static ut::AwaitableHandle asyncChatServer(unsigned short port)
         }
 
         std::unique_ptr<ClientSession> session;
-        ut::AwaitableHandle awtAccept;
+        ut::Awaitable awtAccept;
 
         while (true) {
             printf ("waiting for clients to connect / disconnect...\n");
 
-            if (!awtAccept) {
+            if (!session) {
                 // prepare for new connection
                 session.reset(new ClientSession(room));
                 awtAccept = ut::asio::asyncAccept(acceptor, session->socket());
@@ -262,14 +259,14 @@ static ut::AwaitableHandle asyncChatServer(unsigned short port)
             SessionList::iterator posTerminated;
 
             // combine the list of awaitables for easier manipulation
-            ut::AwaitableHandle awtSessionTerminated = ut::asyncAny(mSessions, posTerminated);
+            ut::Awaitable awtSessionTerminated = ut::asyncAny(mSessions, posTerminated);
 
             // yield until a new connection has been accepted / terminated
-            ut::AwaitableHandle& done = ut::awaitAny(awtAccept, awtSessionTerminated);
+            ut::Awaitable& done = ut::awaitAny(awtAccept, awtSessionTerminated);
 
-            if (done == awtAccept) {
+            if (&done == &awtAccept) {
                 try {
-                    awtAccept->await(); // check for exception
+                    awtAccept.await(); // check for exception
                     printf ("client acepted\n");
 
                     // start session coroutine
@@ -280,13 +277,12 @@ static ut::AwaitableHandle asyncChatServer(unsigned short port)
                 }
 
                 session = nullptr;
-                awtAccept = nullptr;
             } else {
                 // remove terminated session
                 ClientSession *session = posTerminated->get();
 
                 try {
-                    session->awaitable()->await(); // check for exception
+                    session->awaitable().await(); // check for exception
                     printf ("client '%s' has left\n", session->nickname().c_str());
                 } catch(...) {
                     printf ("client '%s' disconnected\n", session->nickname().c_str());
@@ -303,7 +299,7 @@ void ex_awaitChatServer()
     // setup a scheduler on top of Boost.Asio io_service
     ut::initScheduler(&asioSchedule);
 
-    ut::AwaitableHandle awt = asyncChatServer(3455);
+    ut::Awaitable awt = asyncChatServer(3455);
 
     // loops until all async handlers have ben dispatched
     ut::asio::io().run();

@@ -57,7 +57,7 @@
 inline const char* readLine()
 {
     static char line[512];
-    
+
     void* result = fgets(line, sizeof(line), stdin);
 
     if (result == nullptr) {

@@ -57,7 +57,7 @@ void implLog(LogLevel logLevel, const char *format, ...)
     vsnprintf(sBuffer + PREFIX_LEN, LOG_BUF_SIZE - PREFIX_LEN, format, ap);
 
     printf("%s\n", sBuffer);
-    
+
     va_end(ap);
 }
 

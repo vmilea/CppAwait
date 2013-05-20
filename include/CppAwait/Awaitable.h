@@ -26,7 +26,6 @@
 #include "Config.h"
 #include "Coro.h"
 #include "misc/Signals.h"
-#include "misc/CallbackGuard.h"
 #include "impl/Assert.h"
 #include <array>
 
@@ -114,14 +113,99 @@ Ticket scheduleWithTicket(Action action);
 
 ///@}
 
+
+struct AwaitableImpl;
+
+namespace detail
+{
+    template <typename F>
+    class CallbackWrapper;
+}
+
+/**
+ * Handle for completing an Awaitable
+ *
+ * Completer is copyable. The first Completer to complete() / fail()
+ * the Awaitable wins, and the rest become no-op.
+ */
+class Completer
+{
+public:
+    /** Construct a dummy completer */
+    Completer()
+        : mAwtImpl(nullptr) { }
+
+    /** Check if associated awaitable is done */
+    bool isExpired()
+    {
+        return mGuard.expired();
+    }
+
+    /** Calls complete() */
+    void operator()() const
+    {
+        complete();
+    }
+
+    /**
+     * Complete awaitable; resumes awaiting coroutine
+     *
+     * Must be called from master coroutine.
+     */
+    void complete() const;
+
+    /**
+     * Fail awaitable; throws exception on awaiting coroutine
+     *
+     * Must be called from master coroutine.
+     */
+    void fail(std::exception_ptr eptr) const;
+
+    /**
+     * Schedule complete
+     *
+     * May be called from any coroutine.
+     */
+    void scheduleComplete() const;
+
+    /**
+     * Schedule fail
+     *
+     * May be called from any coroutine.
+     */
+    void scheduleFail(std::exception_ptr eptr) const;
+
+    /**
+     * Wraps a callback function
+     *
+     * The wrapper executes func and immediately finishes Awaitable. Nothing
+     * happens if the wrapper runs after Awaitable is done (and possibly
+     * destroyed).
+     *
+     * @param  func  callback to wrap. Must not throw. Must return a std::exception_ptr.
+     *               The empty exception_ptr triggers complete(), any other return triggers fail().
+     * @return wrapped func
+     */
+    template <typename F>
+    detail::CallbackWrapper<F> wrap(F func)
+    {
+        return detail::CallbackWrapper<F>(*this, std::move(func));
+    }
+
+private:
+    Completer(AwaitableImpl *awtImpl, const std::shared_ptr<void>& guard)
+        : mAwtImpl(awtImpl)
+        , mGuard(guard) { }
+
+    AwaitableImpl *mAwtImpl;
+    std::weak_ptr<void> mGuard;
+
+    friend class Awaitable;
+};
+
 //
 // Awaitable
 //
-
-class Awaitable;
-
-/** Unique reference to an Awaitable */
-typedef std::unique_ptr<Awaitable> AwaitableHandle;
 
 /**
  * Wrapper for asynchronous operations
@@ -154,8 +238,16 @@ public:
     /** Signal emitted on complete / fail */
     typedef Signal1<Awaitable*> OnDoneSignal;
 
-    /** Destructor */
-    virtual ~Awaitable();
+    /** Create an awaitable this way if you intend to take its Completer */
+    explicit Awaitable(std::string tag = std::string());
+
+    ~Awaitable();
+
+    /** Move constructor */
+    Awaitable(Awaitable&& other);
+
+    /** Move assignment */
+    Awaitable& operator=(Awaitable&& other);
 
     /**
      * Suspend current coroutine until done
@@ -184,11 +276,14 @@ public:
     /** True if completed or failed */
     bool isDone();
 
+    /** Exception set on fail */
+    std::exception_ptr exception();
+
     /** Add a custom handler to be called when done */
     SignalConnection connectToDone(const OnDoneSignal::slot_type& slot);
 
-    /** Exception set on fail */
-    std::exception_ptr exception();
+    /** Take the completer functor */
+    Completer takeCompleter();
 
     /** Identifier for debugging */
     const char* tag();
@@ -213,33 +308,19 @@ public:
     template<typename T>
     T* userDataPtr();
 
+    /** Shorthand for takeCompleter().wrap(func) */
+    template <typename F>
+    detail::CallbackWrapper<F> wrap(F func)
+    {
+        return detail::CallbackWrapper<F>(takeCompleter(), std::move(func));
+    }
+
     /**
      * Explicitly set continuation coroutine. Enables awaitAny (select / poll) pattern.
      *
      * @param coro   coroutine to yield to after complete() / fail()
      */
     void setAwaitingCoro(Coro *coro);
-
-public:
-    /** Protected constructor */
-    Awaitable(std::string tag);
-
-    /**
-     * To be called on completion; yields to awaiting coroutine if any.
-     *
-     * Must be called from master coroutine or bound coroutine.
-     */
-    void complete();
-
-    /**
-     * To be called on fail; throws exception on awaiting coroutine if any.
-     *
-     * Must be called from master coroutine or bound coroutine.
-     */
-    void fail(std::exception_ptr eptr);
-
-    struct Impl;
-    std::unique_ptr<Impl> m;
 
 private:
     Awaitable(const Awaitable&); // noncopyable
@@ -249,10 +330,17 @@ private:
 
     void* rawUserDataPtr();
 
+    void complete();
+
+    void fail(std::exception_ptr eptr);
+
+    std::unique_ptr<AwaitableImpl> m;
+
     template <typename Collection>
     friend typename Collection::iterator awaitAny(Collection& awaitables);
 
-    friend AwaitableHandle startAsync(std::string tag, AsyncFunc func, size_t stackSize);
+    friend class Completer;
+    friend Awaitable startAsync(std::string tag, AsyncFunc func, size_t stackSize);
 };
 
 
@@ -280,7 +368,7 @@ private:
  * ignore it in a catch (...) handler.
  *
  */
-AwaitableHandle startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize = Coro::defaultStackSize());
+Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize = Coro::defaultStackSize());
 
 
 /**
@@ -291,22 +379,22 @@ AwaitableHandle startAsync(std::string tag, Awaitable::AsyncFunc func, size_t st
  */
 ///@{
 
-/** select Awaitable from an Awaitable */
+/** select Awaitable from a pointer to Awaitable */
 inline Awaitable* selectAwaitable(Awaitable* element)
 {
     return element;
 }
 
-/** select Awaitable from an AwaitableHandle */
-inline Awaitable* selectAwaitable(AwaitableHandle& element)
+/** select Awaitable from a reference to Awaitable */
+inline Awaitable* selectAwaitable(Awaitable& element)
 {
-    return element.get();
+    return &element;
 }
 
-/** select Awaitable from an AwaitableHandle */
-inline Awaitable* selectAwaitable(AwaitableHandle *element)
+/** select Awaitable from a unique_ptr<Awaitable> */
+inline Awaitable* selectAwaitable(std::unique_ptr<Awaitable>& element)
 {
-    return element->get();
+    return element.get();
 }
 
 /** select Awaitable from a std::pair */
@@ -412,7 +500,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
 
 /** Compose a collection of awaitables, awaits for all to complete */
 template <typename Collection>
-AwaitableHandle asyncAll(Collection& awaitables)
+Awaitable asyncAll(Collection& awaitables)
 {
     return startAsync("asyncAll", [&awaitables](Awaitable* /* awtSelf */) {
         awaitAll(awaitables);
@@ -421,7 +509,7 @@ AwaitableHandle asyncAll(Collection& awaitables)
 
 /** Compose a collection of awaitables, awaits for any to complete */
 template <typename Collection>
-AwaitableHandle asyncAny(Collection& awaitables, typename Collection::iterator& pos)
+Awaitable asyncAny(Collection& awaitables, typename Collection::iterator& pos)
 {
     return startAsync("asyncAny", [&awaitables, &pos](Awaitable* /* awtSelf */) {
         if (awaitables.empty()) {
@@ -471,27 +559,27 @@ inline void awaitAll(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Awaitabl
 }
 
 /** Yield until all awaitables have completed or one of them fails */
-inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2)
+inline void awaitAll(Awaitable& awt1, Awaitable& awt2)
 {
-    return awaitAll(awt1.get(), awt2.get());
+    return awaitAll(&awt1, &awt2);
 }
 
 /** Yield until all awaitables have completed or one of them fails */
-inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3)
+inline void awaitAll(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3)
 {
-    return awaitAll(awt1.get(), awt2.get(), awt3.get());
+    return awaitAll(&awt1, &awt2, &awt3);
 }
 
 /** Yield until all awaitables have completed or one of them fails */
-inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4)
+inline void awaitAll(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4)
 {
-    return awaitAll(awt1.get(), awt2.get(), awt3.get(), awt4.get());
+    return awaitAll(&awt1, &awt2, &awt3, &awt4);
 }
 
 /** Yield until all awaitables have completed or one of them fails */
-inline void awaitAll(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4, AwaitableHandle& awt5)
+inline void awaitAll(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4, Awaitable& awt5)
 {
-    return awaitAll(awt1.get(), awt2.get(), awt3.get(), awt4.get(), awt5.get());
+    return awaitAll(&awt1, &awt2, &awt3, &awt4, &awt5);
 }
 
 /** Yield until any of the awaitables has completed or failed */
@@ -531,207 +619,32 @@ inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Aw
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2)
+inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2)
 {
-    ut_assert_(awt1 && awt2);
-
-    std::array<AwaitableHandle*, 2> awts = {{ &awt1, &awt2 }};
+    std::array<Awaitable*, 2> awts = {{ &awt1, &awt2 }};
     return **awaitAny(awts);
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3)
+inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3)
 {
-    ut_assert_(awt1 && awt2 && awt3);
-
-    std::array<AwaitableHandle*, 3> awts = {{ &awt1, &awt2, &awt3 }};
+    std::array<Awaitable*, 3> awts = {{ &awt1, &awt2, &awt3 }};
     return **awaitAny(awts);
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4)
+inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4)
 {
-    ut_assert_(awt1 && awt2 && awt3 && awt4);
-
-    std::array<AwaitableHandle*, 4> awts = {{ &awt1, &awt2, &awt3, &awt4 }};
+    std::array<Awaitable*, 4> awts = {{ &awt1, &awt2, &awt3, &awt4 }};
     return **awaitAny(awts);
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline AwaitableHandle& awaitAny(AwaitableHandle& awt1, AwaitableHandle& awt2, AwaitableHandle& awt3, AwaitableHandle& awt4, AwaitableHandle& awt5)
+inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4, Awaitable& awt5)
 {
-    ut_assert_(awt1 && awt2 && awt3 && awt4 && awt5);
-
-    std::array<AwaitableHandle*, 5> awts = {{ &awt1, &awt2, &awt3, &awt4, &awt5 }};
+    std::array<Awaitable*, 5> awts = {{ &awt1, &awt2, &awt3, &awt4, &awt5 }};
     return **awaitAny(awts);
 }
-
-/** Exposes complete / fail */
-class Completable : public Awaitable
-{
-public:
-    /* Helps wrap asynchronous APIs by hooking the Completable to raw callback */
-    template <typename F>
-    class CallbackWrapper
-    {
-    public:
-        CallbackWrapper(ut::Completable *completable, F&& callback)
-            : mCompletable(completable)
-            , mGuardToken(mCompletable->getGuardToken())
-            , mCallback(std::move(callback)) { }
-
-        CallbackWrapper(const CallbackWrapper<F>& other)
-            : mCompletable(other.mCompletable)
-            , mGuardToken(other.mGuardToken)
-            , mCallback(other.mCallback) { }
-
-        CallbackWrapper<F>& operator=(const CallbackWrapper<F>& other)
-        {
-            mCompletable = other.mCompletable;
-            mGuardToken = other.mGuardToken;
-            mCallback = other.mCallback;
-
-            return *this;
-        }
-
-        CallbackWrapper(CallbackWrapper<F>&& other)
-            : mCompletable(other.mCompletable)
-            , mGuardToken(std::move(other.mGuardToken))
-            , mCallback(std::move(other.mCallback))
-        {
-            other.mCompletable = nullptr;
-        }
-
-        CallbackWrapper<F>& operator=(CallbackWrapper<F>&& other)
-        {
-            mCompletable = other.mCompletable;
-            other.mCompletable = nullptr;
-            mGuardToken = std::move(other.mGuardToken);
-            mCallback = std::move(other.mCallback);
-
-            return *this;
-        }
-
-    #define UT_CALLBACK_WRAPPER_IMPL(...) \
-        if (!mGuardToken.isBlocked()) { \
-            std::exception_ptr eptr = mCallback(__VA_ARGS__); \
-            \
-            if (is(eptr)) { \
-                mCompletable->fail(eptr); \
-            } else { \
-                mCompletable->complete(); \
-            } \
-        }
-
-        void operator()()
-        {
-            UT_CALLBACK_WRAPPER_IMPL();
-        }
-
-        template <typename Arg1>
-        void operator()(Arg1&& arg1)
-        {
-            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1));
-        }
-
-        template <typename Arg1, typename Arg2>
-        void operator()(Arg1&& arg1, Arg2&& arg2)
-        {
-            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
-        }
-
-        template <typename Arg1, typename Arg2, typename Arg3>
-        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3)
-        {
-            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3));
-        }
-
-        template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3, Arg4&& arg4)
-        {
-            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3),
-                                     std::forward<Arg4>(arg4));
-        }
-
-        template <typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
-        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3, Arg4&& arg4, Arg5&& arg5)
-        {
-            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3),
-                                     std::forward<Arg4>(arg4), std::forward<Arg5>(arg5));
-        }
-
-    private:
-        ut::Completable *mCompletable;
-        CallbackGuard::Token mGuardToken;
-        F mCallback;
-    };
-
-    /** Default constructor */
-    Completable();
-
-    /** Create a named completable */
-    Completable(std::string tag);
-
-    /**
-     * To be called on completion; yields to awaiting coroutine if any
-     *
-     * Must be called from master coroutine.
-     */
-    void complete(); // not virtual
-
-    /**
-     * To be called on fail; throws exception on awaiting coroutine if any
-     *
-     * Must be called from master coroutine.
-     */
-    void fail(std::exception_ptr eptr);  // not virtual
-
-    /**
-     * Schedule complete
-     *
-     * May be called from any coroutine.
-     */
-    void scheduleComplete();
-
-    /**
-     * Schedule fail
-     *
-     * May be called from any coroutine.
-     */
-    void scheduleFail(std::exception_ptr eptr);
-
-    /**
-     * Returns a token that may be used to check whether the Callable is done
-     *
-     * The token gets blocked on complete / fail. It is still readable after
-     * destroying Callable.
-     *
-     * Guard tokens help ignore late callbacks, so you don't try to complete
-     * a Callable that is no longer valid. Note, wrap() already handles this
-     * and is simpler to use.
-     */
-    CallbackGuard::Token getGuardToken();
-
-    /**
-     * Wraps a callback function
-     *
-     * The wrapper executes func and immediately finishes Callable. Nothing
-     * happens if the wrapper runs after Callable is done (and possibly
-     * destroyed).
-     *
-     * @param  func  callback to wrap. Must return a std::exception_ptr
-     *               which triggers Completable to complete / fail.
-     * @return wrapped func
-     */
-    template <typename F>
-    CallbackWrapper<F> wrap(F func)
-    {
-        return CallbackWrapper<F>(this, std::move(func));
-    }
-
-private:
-    CallbackGuard mGuard;
-};
 
 //
 // impl
@@ -762,6 +675,96 @@ T* Awaitable::userDataPtr()
     void *data = rawUserDataPtr();
 
     return reinterpret_cast<T*>(data);
+}
+
+namespace detail
+{
+    // Helps wrap asynchronous APIs by hooking the Completer to raw callback
+    //
+    template <typename F>
+    class CallbackWrapper
+    {
+    public:
+        CallbackWrapper(const Completer& completer, F&& callback)
+            : mCompleter(completer)
+            , mCallback(std::move(callback)) { }
+
+        CallbackWrapper(const CallbackWrapper<F>& other)
+            : mCompleter(other.mCompleter)
+            , mCallback(other.mCallback) { }
+
+        CallbackWrapper<F>& operator=(const CallbackWrapper<F>& other)
+        {
+            mCompleter = other.mCompleter;
+            mCallback = other.mCallback;
+
+            return *this;
+        }
+
+        CallbackWrapper(CallbackWrapper<F>&& other)
+            : mCompleter(std::move(other.mCompleter))
+            , mCallback(std::move(other.mCallback)) { }
+
+        CallbackWrapper<F>& operator=(CallbackWrapper<F>&& other)
+        {
+            mCompleter = std::move(other.mCompleter);
+            mCallback = std::move(other.mCallback);
+
+            return *this;
+        }
+
+    #define UT_CALLBACK_WRAPPER_IMPL(...) \
+        if (!mCompleter.isExpired()) { \
+            std::exception_ptr eptr = mCallback(__VA_ARGS__); \
+            \
+            if (is(eptr)) { \
+                mCompleter.fail(std::move(eptr)); \
+            } else { \
+                mCompleter(); \
+            } \
+        }
+
+        void operator()()
+        {
+            UT_CALLBACK_WRAPPER_IMPL();
+        }
+
+        template <typename Arg1>
+        void operator()(Arg1&& arg1)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1));
+        }
+
+        template <typename Arg1, typename Arg2>
+        void operator()(Arg1&& arg1, Arg2&& arg2)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
+        }
+
+        template <typename Arg1, typename Arg2, typename Arg3>
+        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3));
+        }
+
+        template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3, Arg4&& arg4)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3),
+                std::forward<Arg4>(arg4));
+        }
+
+        template <typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
+        void operator()(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3, Arg4&& arg4, Arg5&& arg5)
+        {
+            UT_CALLBACK_WRAPPER_IMPL(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3),
+                std::forward<Arg4>(arg4), std::forward<Arg5>(arg5));
+        }
+
+    private:
+        Completer mCompleter;
+        F mCallback;
+    };
 }
 
 }

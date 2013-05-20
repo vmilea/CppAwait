@@ -34,7 +34,7 @@ typedef std::shared_ptr<const std::string> MessageCRef;
 static std::queue<MessageCRef> sMsgQueue;
 
 // used to notify when a new message has been queued
-static std::unique_ptr<ut::Completable> sAwtMsgQueued;
+static ut::Completer sEvtMsgQueued;
 
 // reads keyboard input and enqueues outbound messages
 static void inputFunc()
@@ -51,9 +51,7 @@ static void inputFunc()
             sMsgQueue.push(std::make_shared<std::string>(line + "\n"));
 
             // wake up writer
-            if (!sAwtMsgQueued->didComplete()) {
-                sAwtMsgQueued->complete();
-            }
+            sEvtMsgQueued();
         });
 
         // sleep to tidy up output
@@ -62,7 +60,7 @@ static void inputFunc()
     } while(true);
 }
 
-static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::string& port, const std::string& nickname)
+static ut::Awaitable asyncChatClient(const std::string& host, const std::string& port, const std::string& nickname)
 {
     // this coroutine reads & prints inbound messages
     auto reader = [](tcp::socket& socket, ut::Awaitable * /* awtSelf */) {
@@ -70,8 +68,8 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
         std::string msg;
 
         do {
-            ut::AwaitableHandle awt = ut::asio::asyncReadUntil(socket, recv, std::string("\n"));
-            awt->await(); // yield until we have an inbound message
+            ut::Awaitable awt = ut::asio::asyncReadUntil(socket, recv, std::string("\n"));
+            awt.await(); // yield until we have an inbound message
 
             std::istream recvStream(recv.get());
             std::getline(recvStream, msg);
@@ -86,14 +84,16 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
 
         do {
             if (sMsgQueue.empty()) {
-                sAwtMsgQueued->await(); // yield until we have outbound messages
-                sAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
+                ut::Awaitable awtMsgQueued("evt-msg-queued");
+                sEvtMsgQueued = awtMsgQueued.takeCompleter();
+
+                awtMsgQueued.await(); // yield until we have outbound messages
             } else {
                 MessageCRef msg = sMsgQueue.front();
                 sMsgQueue.pop();
 
-                ut::AwaitableHandle awt = ut::asio::asyncWrite(socket, msg);
-                awt->await(); // yield until message delivered
+                ut::Awaitable awt = ut::asio::asyncWrite(socket, msg);
+                awt.await(); // yield until message delivered
 
                 if (*msg == "/leave\n") {
                     quit = true;
@@ -105,7 +105,7 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
     // main coroutine handles connection, handshake, reads & writes
     return ut::startAsync("asyncChatClient", [host, port, nickname, reader, writer](ut::Awaitable * /* awtSelf */) {
         try {
-            ut::AwaitableHandle awt;
+            ut::Awaitable awt;
 
             tcp::socket socket(ut::asio::io());
 
@@ -114,11 +114,11 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
 
             tcp::resolver::iterator itEndpoints;
             awt = ut::asio::asyncResolve(resolver, query, itEndpoints);
-            awt->await();
+            awt.await();
 
             tcp::resolver::iterator itConnected;
             awt = ut::asio::asyncConnect(socket, itEndpoints, itConnected);
-            awt->await();
+            awt.await();
 
             // Asio wrappers need some arguments passed as shared_ptr in order to support safe interruption
             auto msg = std::make_shared<std::string>(nickname.begin(), nickname.end());
@@ -127,31 +127,30 @@ static ut::AwaitableHandle asyncChatClient(const std::string& host, const std::s
 
             // first outbound message is always nickname
             awt = ut::asio::asyncWrite(socket, msg);
-            awt->await();
+            awt.await();
 
             // read keyboard input on a different thread to keep main loop responsive
             thread inputThread(&inputFunc);
             inputThread.detach();
-            sAwtMsgQueued.reset(new ut::Completable("evt-msg-queued"));
 
             // this coroutine reads & prints inbound messages
-            ut::AwaitableHandle awtReader = ut::startAsync("chatClient-reader", [=, &socket](ut::Awaitable *awtSelf) {
+            ut::Awaitable awtReader = ut::startAsync("chatClient-reader", [=, &socket](ut::Awaitable *awtSelf) {
                 reader(socket, awtSelf);
             });
 
             // this coroutine writes outbound messages
-            ut::AwaitableHandle awtWriter = ut::startAsync("chatClient-writer", [=, &socket](ut::Awaitable *awtSelf) {
+            ut::Awaitable awtWriter = ut::startAsync("chatClient-writer", [=, &socket](ut::Awaitable *awtSelf) {
                 writer(socket, awtSelf);
             });
 
             // quit on /leave or Asio exception
-            ut::AwaitableHandle& done = ut::awaitAny(awtReader, awtWriter);
+            ut::Awaitable& done = ut::awaitAny(awtReader, awtWriter);
 
             // cancel socket operations?
             // socket.shutdown(tcp::socket::shutdown_both);
 
             // trigger exception, if any
-            done->await();
+            done.await();
         } catch (const std::exception& ex) {
             printf ("Failed! %s - %s\n", typeid(ex).name(), ex.what());
         } catch (...) {
@@ -168,7 +167,7 @@ void ex_awaitChatClient()
     // setup a scheduler on top of Boost.Asio io_service
     ut::initScheduler(&asioSchedule);
 
-    ut::AwaitableHandle awt = asyncChatClient("localhost", "3455", nickname);
+    ut::Awaitable awt = asyncChatClient("localhost", "3455", nickname);
 
     // loops until all async handlers have ben dispatched
     ut::asio::io().run();

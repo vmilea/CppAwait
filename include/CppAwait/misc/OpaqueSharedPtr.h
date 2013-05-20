@@ -34,6 +34,8 @@ namespace ut {
  * Handle to a shared_ptr with type erased
  *
  * OpaqueSharedPtr keeps some abstract resource alive until you no longer need it.
+ *
+ * shared_ptr<void> should also work, but it doesn't handle const T.
  */
 class OpaqueSharedPtr
 {

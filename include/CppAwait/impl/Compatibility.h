@@ -99,4 +99,14 @@ std::unique_ptr<T> make_unique(Arg1&& arg1, Arg2&& arg2, Arg3&& arg3, Arg4&& arg
         std::forward<Arg4>(arg4), std::forward<Arg5>(arg5)));
 }
 
+//
+// misc
+//
+
+template<typename T>
+std::unique_ptr<T> asUniquePtr(T&& value)
+{
+    return ut::make_unique<T>(std::move(value));
+}
+
 }

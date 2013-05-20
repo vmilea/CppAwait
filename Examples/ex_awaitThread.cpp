@@ -31,15 +31,16 @@ using namespace loo::lchrono;
 //        how to handle interruption
 //
 
-static ut::AwaitableHandle asyncCountdown()
+static ut::Awaitable asyncCountdown()
 {
     return ut::startAsync("asyncCountdown", [](ut::Awaitable * /* awtSelf */) {
         timed_mutex mutex;
         condition_variable_any cond;
         bool isInterrupted = false;
-        ut::Completable awtLiftoff("evt-liftoff");
 
-        thread countdownThread([&]() {
+        ut::Awaitable awtLiftoff("evt-liftoff");
+
+        thread countdownThread([&](ut::Completer completer) {
             unique_lock<timed_mutex> lock(mutex);
 
             for (int i = 3; i > 0 && !isInterrupted; i--) {
@@ -55,13 +56,14 @@ static ut::AwaitableHandle asyncCountdown()
             } else {
                 printf ("liftoff!\n");
 
-                // Safe coroutine resumal. It's possible (but unlikely) for the coroutine to
-                // get interrupted before resumal. To handle this, scheduled functor checks if
-                // awtLiftoff is still valid before completing it.
+                // Safe coroutine resumal: schedule completion on main thread.
                 //
-                awtLiftoff.scheduleComplete();
+                // It's possible the abort comes too late to prevent liftoff. Completer checks
+                // the awaitable is still valid, so nothing happens if it runs after thread.join().
+                //
+                completer.scheduleComplete();
             }
-        });
+        }, awtLiftoff.takeCompleter());
 
         try {
             // suspend until liftoff or abort
@@ -80,7 +82,7 @@ static ut::AwaitableHandle asyncCountdown()
     });
 }
 
-static ut::AwaitableHandle asyncKey()
+static ut::Awaitable asyncKey()
 {
     return ut::startAsync("asyncKey", [](ut::Awaitable * /* awtSelf */) {
         ut::Coro *coro = ut::currentCoro();
@@ -111,14 +113,14 @@ static ut::AwaitableHandle asyncKey()
     });
 }
 
-static ut::AwaitableHandle asyncThread()
+static ut::Awaitable asyncThread()
 {
     return ut::startAsync("asyncThread", [](ut::Awaitable * /* awtSelf */) {
         printf ("hit [Return] to abort launch\n\n");
 
         {
-            ut::AwaitableHandle awtCountdown = asyncCountdown();
-            ut::AwaitableHandle awtKey = asyncKey();
+            ut::Awaitable awtCountdown = asyncCountdown();
+            ut::Awaitable awtKey = asyncKey();
 
             // wait until liftoff or abort
             ut::awaitAny(awtCountdown, awtKey);
@@ -140,7 +142,7 @@ void ex_awaitThread()
 
     ut::initScheduler(&looSchedule);
 
-    ut::AwaitableHandle awt = asyncThread();
+    ut::Awaitable awt = asyncThread();
 
     mainLooper.run();
 }

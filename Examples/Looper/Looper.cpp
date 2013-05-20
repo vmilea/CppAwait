@@ -55,7 +55,7 @@ Looper::Looper(const std::string& name)
 
         Looper& looper;
     };
-    
+
     mSchedulerAdapter.reset(new SchedulerAdapter(*this));
 }
 
@@ -92,7 +92,7 @@ void Looper::run()
         }
 
         assert (!mQuit);
-        
+
         mContext.runQueued(&mQuit);
 
         lthread::this_thread::yield();

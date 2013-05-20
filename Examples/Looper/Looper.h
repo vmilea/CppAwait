@@ -43,9 +43,9 @@ namespace detail
         ~LoopContext();
 
         void runQueued(bool *quit);
-        
+
         Timepoint queuePending(); // must have lock
-        
+
         bool hasPending(); // must have lock
 
         template <typename Callable>
@@ -66,11 +66,11 @@ namespace detail
         }
 
         bool tryCancelQueued(Ticket ticket);
-        
+
         bool tryCancelPending(Ticket ticket); // must have lock
-        
+
         void cancelAllQueued();
-        
+
         void cancelAllPending(); // must have lock
 
     private:
@@ -165,21 +165,21 @@ private:
     typedef lthread::unique_lock<Mutex> UniqueLock;
 
     detail::LoopContext mContext;
-    
+
     Mutex mMutex;
     lthread::condition_variable_any mMutexCond;
-    
+
     std::unique_ptr<AbstractScheduler> mSchedulerAdapter;
-    
+
     std::string mName;
-    
+
     lthread::thread::id mThreadId;
 
     bool mQuit;
 };
 
 void setMainLooper(Looper &mainLooper);
-    
+
 Looper& mainLooper();
 
 }
