@@ -25,15 +25,9 @@
 
 #include "Config.h"
 #include "Coro.h"
-#include "OpaqueSharedPtr.h"
+#include "misc/Signals.h"
+#include "misc/CallbackGuard.h"
 #include "impl/Assert.h"
-#include "impl/Signals.h"
-#include "impl/CallbackGuard.h"
-#include <cstdarg>
-#include <string>
-#include <memory>
-#include <stdexcept>
-#include <functional>
 #include <array>
 
 namespace ut {
@@ -44,6 +38,23 @@ namespace ut {
  * Hook for integration with the main loop of your program (Qt / GLib / MFC / Asio ...)
  */
 ///@{
+
+/**
+ * Hook signature -- schedule an action
+ * @param action    action to run
+ *
+ * Note:
+ * - action shall not be invoked from within this function
+ * - schedule(a), schedule(b) implies a runs before b
+ */
+typedef void (*ScheduleFunc)(Action action);
+
+/** Setup scheduling hook. This must be done before using Awaitable. */
+void initScheduler(ScheduleFunc schedule);
+
+//
+// generic scheduling interface
+//
 
 /** Unique handle for a scheduled action, may be used to cancel the action */
 class Ticket
@@ -95,23 +106,6 @@ private:
     friend Ticket scheduleWithTicket(Action action);
 };
 
-/**
- * Hook signature -- schedule an action
- * @param action    action to run
- *
- * Note:
- * - action shall not be invoked from within this function
- * - schedule(a), schedule(b) implies a runs before b
- */
-typedef void (*ScheduleFunc)(Action action);
-
-/** Setup scheduling hook. This must be done before using Awaitable. */
-void initScheduler(ScheduleFunc schedule);
-
-//
-// generic scheduling interface
-//
-
 /** Schedule an action */
 void schedule(Action action);
 
@@ -158,7 +152,7 @@ public:
     typedef std::function<void (Awaitable *awtSelf)> AsyncFunc;
 
     /** Signal emitted on complete / fail */
-    typedef boost::signals2::signal<void (Awaitable *awt)> OnDoneSignal;
+    typedef Signal1<Awaitable*> OnDoneSignal;
 
     /** Destructor */
     virtual ~Awaitable();
@@ -191,7 +185,7 @@ public:
     bool isDone();
 
     /** Add a custom handler to be called when done */
-    boost::signals2::connection connectToDone(const OnDoneSignal::slot_type& slot);
+    SignalConnection connectToDone(const OnDoneSignal::slot_type& slot);
 
     /** Exception set on fail */
     std::exception_ptr exception();
@@ -219,7 +213,14 @@ public:
     template<typename T>
     T* userDataPtr();
 
-protected:
+    /**
+     * Explicitly set continuation coroutine. Enables awaitAny (select / poll) pattern.
+     *
+     * @param coro   coroutine to yield to after complete() / fail()
+     */
+    void setAwaitingCoro(Coro *coro);
+
+public:
     /** Protected constructor */
     Awaitable(std::string tag);
 
@@ -237,19 +238,16 @@ protected:
      */
     void fail(std::exception_ptr eptr);
 
-    std::string mTag;
-    Coro *mBoundCoro;
-    Coro *mAwaitingCoro;
-    bool mDidComplete;
-    std::exception_ptr mExceptionPtr;
-    OnDoneSignal mOnDone;
-
-    void *mUserData;
-    Action mUserDataDeleter;
+    struct Impl;
+    std::unique_ptr<Impl> m;
 
 private:
     Awaitable(const Awaitable&); // noncopyable
     Awaitable& operator=(const Awaitable&); // noncopyable
+
+    void bindRawUserData(void *userData, Action deleter);
+
+    void* rawUserDataPtr();
 
     template <typename Collection>
     friend typename Collection::iterator awaitAny(Collection& awaitables);
@@ -385,7 +383,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         if (awt == nullptr) {
             continue;
         }
-        awt->mAwaitingCoro = currentCoro();
+        awt->setAwaitingCoro(currentCoro());
     }
 
     yieldTo(masterCoro());
@@ -398,7 +396,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         if (awt == nullptr) {
             continue;
         }
-        awt->mAwaitingCoro = nullptr;
+        awt->setAwaitingCoro(nullptr);
 
         if (completedAwt == nullptr && awt->isDone()) {
             completedAwt = awt;
@@ -742,29 +740,28 @@ private:
 template<typename T>
 void Awaitable::bindUserData(T *userData, bool takeOwnership)
 {
-    if (mUserDataDeleter) {
-        mUserDataDeleter();
-    }
-
-    mUserData = userData;
-
-    if (takeOwnership) {
-        mUserDataDeleter = [=]() { delete userData; };
-    }
+    bindRawUserData(userData,
+        (takeOwnership
+            ? [=]() { delete userData; }
+            : Action()));
 }
 
 template<typename T>
 T& Awaitable::userData()
 {
-    ut_assert_(mUserData != nullptr);
+    void *data = rawUserDataPtr();
 
-    return *reinterpret_cast<T*>(mUserData);
+    ut_assert_(data != nullptr);
+
+    return *reinterpret_cast<T*>(data);
 }
 
 template<typename T>
 T* Awaitable::userDataPtr()
 {
-    return reinterpret_cast<T*>(mUserData);
+    void *data = rawUserDataPtr();
+
+    return reinterpret_cast<T*>(data);
 }
 
 }

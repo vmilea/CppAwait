@@ -16,7 +16,8 @@
 
 #include "ConfigPrivate.h"
 #include <CppAwait/AsioWrappers.h>
-#include <CppAwait/impl/Util.h>
+#include <CppAwait/impl/StringUtil.h>
+#include <iostream>
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 

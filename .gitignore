@@ -1,4 +1,5 @@
 *.bat
 *.suo
 *.kdev*
+.project
 CMakeLists.txt.user

@@ -16,7 +16,9 @@
 
 #include "ConfigPrivate.h"
 #include <CppAwait/Coro.h>
-#include <CppAwait/impl/Util.h>
+#include <CppAwait/Log.h>
+#include <CppAwait/impl/Assert.h>
+#include <CppAwait/impl/Foreach.h>
 #include <map>
 #include <vector>
 #include <algorithm>
@@ -211,30 +213,6 @@ static StackPool sPool;
 
 
 //
-// ForcedUnwind
-//
-
-std::exception_ptr ForcedUnwind::ptr()
-{
-    ut_assert_(sForcedUnwindPtr != nullptr && "not initialized");
-
-    return *sForcedUnwindPtr;
-}
-
-
-//
-// YieldForbidden
-//
-
-std::exception_ptr YieldForbidden::ptr()
-{
-    ut_assert_(sYieldForbiddenPtr != nullptr && "not initialized");
-
-    return *sYieldForbiddenPtr;
-}
-
-
-//
 // Stack
 //
 
@@ -289,62 +267,62 @@ struct Coro::Impl
 };
 
 Coro::Coro(std::string tag, Func func, size_t stackSize)
-    : mImpl(new Impl(std::move(tag), sPool.obtain(stackSize)))
+    : m(new Impl(std::move(tag), sPool.obtain(stackSize)))
 {
     if (sCurrentCoro == nullptr) {
         initCoroLib();
     }
 
-    ut_log_verbose_("- new coroutine '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- new coroutine '%s'", m->tag.c_str());
 
     init(std::move(func));
 }
 
 Coro::Coro(std::string tag, size_t stackSize)
-    : mImpl(new Impl(std::move(tag), sPool.obtain(stackSize)))
+    : m(new Impl(std::move(tag), sPool.obtain(stackSize)))
 {
-    ut_log_verbose_("- new coroutine '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- new coroutine '%s'", m->tag.c_str());
 }
 
 Coro::Coro()
-    : mImpl(new Impl(std::string("main"), std::pair<void *, size_t>(nullptr, 0)))
+    : m(new Impl(std::string("main"), std::pair<void *, size_t>(nullptr, 0)))
 {
-    ut_log_verbose_("- new coroutine '%s'", mImpl->tag.c_str());
+    ut_log_verbose_("- new coroutine '%s'", m->tag.c_str());
 
-    mImpl->fc = new ctx::fcontext_t();
-    mImpl->isRunning = true;
-    mImpl->isFullyUnwinded = false;
+    m->fc = new ctx::fcontext_t();
+    m->isRunning = true;
+    m->isFullyUnwinded = false;
 }
 
 Coro::~Coro()
 {
-    if (mImpl) {
-        ut_log_verbose_("- destroy coroutine '%s'", mImpl->tag.c_str());
+    if (m) {
+        ut_log_verbose_("- destroy coroutine '%s'", m->tag.c_str());
 
         if (this != sMasterCoroChain[0]) {
             ut_assert_(!isRunning() && "can't delete a running coroutine");
 
-            if (!mImpl->isFullyUnwinded) {
+            if (!m->isFullyUnwinded) {
                 setParent(currentCoro());
                 currentCoro()->yieldTo(this);
             }
 
-            sPool.recycle(mImpl->stack.first, mImpl->stack.second);
+            sPool.recycle(m->stack.first, m->stack.second);
         } else {
-            delete mImpl->fc;
+            delete m->fc;
         }
     }
 }
 
 Coro::Coro(Coro&& other)
-    : mImpl(std::move(other.mImpl))
+    : m(std::move(other.m))
 {
 }
 
 Coro& Coro::operator=(Coro&& other)
 {
     if (this != &other) {
-        mImpl = std::move(other.mImpl);
+        m = std::move(other.m);
     }
 
     return *this;
@@ -352,12 +330,12 @@ Coro& Coro::operator=(Coro&& other)
 
 const char* Coro::tag()
 {
-    return mImpl->tag.c_str();
+    return m->tag.c_str();
 }
 
 bool Coro::isRunning()
 {
-    return mImpl->isRunning;
+    return m->isRunning;
 }
 
 void Coro::init(Func func)
@@ -365,17 +343,17 @@ void Coro::init(Func func)
     ut_assert_(currentCoro() != this);
     ut_assert_(!isRunning() && "coroutine already initialized");
 
-    mImpl->parent = currentCoro();
-    mImpl->func = std::move(func);
-    mImpl->fc = ctx::make_fcontext(mImpl->stack.first, mImpl->stack.second, &Coro::fcontextFunc);
+    m->parent = currentCoro();
+    m->func = std::move(func);
+    m->fc = ctx::make_fcontext(m->stack.first, m->stack.second, &Coro::fcontextFunc);
 
-    mImpl->isRunning = true;
-    mImpl->isFullyUnwinded = false;
+    m->isRunning = true;
+    m->isFullyUnwinded = false;
 }
 
 void* Coro::yield(void *value)
 {
-    return yieldTo(mImpl->parent, value);
+    return yieldTo(m->parent, value);
 }
 
 void* Coro::yieldTo(Coro *resumeCoro, void *value)
@@ -387,7 +365,7 @@ void* Coro::yieldTo(Coro *resumeCoro, void *value)
 
 void* Coro::yieldException(std::exception_ptr eptr)
 {
-    return yieldExceptionTo(mImpl->parent, eptr);
+    return yieldExceptionTo(m->parent, eptr);
 }
 
 void* Coro::yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr)
@@ -402,14 +380,14 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
     ut_assert_(sCurrentCoro == this);
     ut_assert_(resumeCoro != nullptr);
     ut_assert_(resumeCoro != this);
-    ut_assert_(!(resumeCoro->mImpl->isFullyUnwinded));
+    ut_assert_(!(resumeCoro->m->isFullyUnwinded));
 
     // ut_log_debug_("-- jumping to '%s', type = %s", resumeCoro->tag(), (type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
     sCurrentCoro = resumeCoro;
 
     YieldValue ySent(type, value);
-    auto yReceived = (YieldValue *) ctx::jump_fcontext(mImpl->fc, resumeCoro->mImpl->fc, (intptr_t) &ySent);
+    auto yReceived = (YieldValue *) ctx::jump_fcontext(m->fc, resumeCoro->m->fc, (intptr_t) &ySent);
 
     // ut_log_debug_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
@@ -434,7 +412,7 @@ void* Coro::unpackYieldValue(const YieldValue& yReceived)
 
 Coro* Coro::parent()
 {
-    return mImpl->parent;
+    return m->parent;
 }
 
 void Coro::setParent(Coro *coro)
@@ -442,7 +420,7 @@ void Coro::setParent(Coro *coro)
     ut_assert_(coro != nullptr);
     ut_assert_(coro != this);
 
-    mImpl->parent = coro;
+    m->parent = coro;
 }
 
 void Coro::fcontextFunc(intptr_t data)
@@ -455,7 +433,7 @@ void Coro::fcontextFunc(intptr_t data)
 
         auto yInitial = (YieldValue *) data;
         void *value = coro->unpackYieldValue(*yInitial);
-        coro->mImpl->func(value);
+        coro->m->func(value);
 
         ut_log_debug_("- } '%s'", coro->tag());
     } catch (const ForcedUnwind&) {
@@ -472,7 +450,7 @@ void Coro::fcontextFunc(intptr_t data)
         peptr = new std::exception_ptr(eptr);
     }
 
-    coro->mImpl->isRunning = false;
+    coro->m->isRunning = false;
 
     if (peptr != nullptr) {
         // Yielding an exception is trickier because we need to get back here
@@ -492,11 +470,38 @@ void Coro::fcontextFunc(intptr_t data)
     // all remaining objects on stack have trivial destructors, coroutine if considered fully unwinded
 
     try {
-        coro->mImpl->isFullyUnwinded = true;
+        coro->m->isFullyUnwinded = true;
         coro->yield();
         ut_assert_(false && "yielded back to fully unwinded coroutine");
     } catch (...) {
         ut_assert_(false && "post run exception");
+    }
+}
+
+//
+// misc
+//
+
+std::exception_ptr ForcedUnwind::ptr()
+{
+    ut_assert_(sForcedUnwindPtr != nullptr && "not initialized");
+
+    return *sForcedUnwindPtr;
+}
+
+std::exception_ptr YieldForbidden::ptr()
+{
+    ut_assert_(sYieldForbiddenPtr != nullptr && "not initialized");
+
+    return *sYieldForbiddenPtr;
+}
+
+void forceUnwind(Coro *coro)
+{
+    try {
+        yieldExceptionTo(coro, ForcedUnwind::ptr());
+    } catch (...) {
+        ut_assert_(false && "Coro may not throw on ForcedUnwind");
     }
 }
 

@@ -14,6 +14,13 @@
 * limitations under the License.
 */
 
+/**
+ * @file  CallbackGuard.h
+ *
+ * Declares the CallbackGuard class.
+ *
+ */
+
 #pragma once
 
 #include "../Config.h"
@@ -21,10 +28,7 @@
 
 namespace ut {
 
-//
-// helps ignore callbacks that arrive too late
-//
-
+/** Helps ignore late callbacks */
 class CallbackGuard
 {
 public:
@@ -71,6 +75,15 @@ public:
         block();
     }
 
+    CallbackGuard(CallbackGuard&& other)
+        : mIsBlocked(std::move(other.mIsBlocked)) { }
+
+    CallbackGuard& operator=(CallbackGuard&& other)
+    {
+        mIsBlocked = std::move(other.mIsBlocked);
+        return *this;
+    }
+
     Token getToken() const
     {
         return Token(mIsBlocked);
@@ -82,6 +95,9 @@ public:
     }
 
 private:
+    CallbackGuard(const CallbackGuard&); // noncopyable
+    CallbackGuard& operator=(const CallbackGuard&); // noncopyable
+
     std::shared_ptr<bool> mIsBlocked;
 };
 

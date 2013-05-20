@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <CppAwait/impl/Functional.h>
+#include <CppAwait/misc/Functional.h>
 
 namespace loo {
 

@@ -18,8 +18,8 @@
 
 #include "Config.h"
 #include "Awaitable.h"
-#include "OpaqueSharedPtr.h"
-#include "impl/CallbackGuard.h"
+#include "misc/OpaqueSharedPtr.h"
+#include "misc/CallbackGuard.h"
 #include <boost/asio.hpp>
 
 // experimental Boost.Asio wrappers

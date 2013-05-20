@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "Config.h"
+#include "../Config.h"
 #include <memory>
 #include <functional>
 

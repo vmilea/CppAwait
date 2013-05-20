@@ -15,11 +15,9 @@
 */
 
 #include "ExUtil.h"
-#include "LooScheduler.h"
 #include "AsioScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
-#include <Looper/Looper.h>
 #include <array>
 
 //

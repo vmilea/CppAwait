@@ -15,7 +15,7 @@
 */
 
 #include "ExUtil.h"
-#include <CppAwait/impl/Log.h>
+#include <CppAwait/Log.h>
 #include <array>
 #include <string>
 #include <boost/lexical_cast.hpp>

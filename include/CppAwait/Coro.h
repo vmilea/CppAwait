@@ -24,8 +24,7 @@
  #pragma once
 
 #include "Config.h"
-#include "impl/Functional.h"
-#include "impl/Assert.h"
+#include "misc/Functional.h"
 #include "impl/Compatibility.h"
 #include <string>
 #include <memory>
@@ -184,13 +183,13 @@ private:
 
     Coro();
     Coro(const Coro& other); // noncopyable
-    Coro& operator=(const Coro& other);  // noncopyable
+    Coro& operator=(const Coro& other); // noncopyable
 
     void* implYieldTo(Coro *resumeCoro, YieldType type, void *value);
     void* unpackYieldValue(const YieldValue& yReceived);
 
     struct Impl;
-    std::unique_ptr<Impl> mImpl;
+    std::unique_ptr<Impl> m;
 
     friend void initCoroLib();
 };
@@ -304,13 +303,6 @@ public:
  *
  * Safe for use while an exception is propagating.
  */
-inline void forceUnwind(Coro *coro)
-{
-    try {
-        yieldExceptionTo(coro, ForcedUnwind::ptr());
-    } catch (...) {
-        ut_assert_(false && "Coro may not throw on ForcedUnwind");
-    }
-}
+void forceUnwind(Coro *coro);
 
 }

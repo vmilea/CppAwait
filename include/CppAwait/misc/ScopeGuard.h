@@ -14,24 +14,37 @@
 * limitations under the License.
 */
 
+/**
+ * @file  ScopeGuard.h
+ *
+ * Declares the ScopeGuard class.
+ *
+ */
+
 #pragma once
 
 #include "../Config.h"
-#include "Assert.h"
-#include "Log.h"
+#include "../impl/Assert.h"
+#include "../Log.h"
 
 namespace ut {
 
-template <typename T>
+/** Classic scope guard for RAII */
+template <typename F>
 class ScopeGuard
 {
 public:
-    typedef ScopeGuard<T> type;
+    typedef ScopeGuard<F> type;
 
-    explicit ScopeGuard(T cleanup)
+    /**
+     * Create a scope guard
+     * @param cleanup   functor to call at end of scope
+     */
+    explicit ScopeGuard(F cleanup)
         : mIsDismissed(false)
         , mCleanup(std::move(cleanup)) { }
 
+    /** Perform cleanup unless dismissed */
     ~ScopeGuard()
     {
         if (!mIsDismissed) {
@@ -46,11 +59,13 @@ public:
         }
     }
 
+    /* Dismiss guard */
     void dismiss() const
     {
         mIsDismissed = true;
     }
 
+    /* Check if dismissed */
     bool isDismissed() const
     {
         return mIsDismissed;
@@ -60,18 +75,19 @@ public:
 
     ScopeGuard(const type& other); // delete
     type& operator=(const type& other); // delete
-    
+
 private:
-    void* operator new(size_t size); // must live on stack
+    void* operator new(size_t size); // must allocate on stack
 
     mutable bool mIsDismissed;
-    T mCleanup;
+    F mCleanup;
 };
 
-template <typename T>
-ScopeGuard<T> makeScopeGuard(T cleanup)
+/** Create a scope guard with template argument deduction */
+template <typename F>
+ScopeGuard<F> makeScopeGuard(F cleanup)
 {
-    return ScopeGuard<T>(cleanup);
+    return ScopeGuard<F>(cleanup);
 }
 
 }
@@ -80,9 +96,11 @@ ScopeGuard<T> makeScopeGuard(T cleanup)
 // ScopeGuards need only be created though these macros
 //
 
+/** Macro for creating anonymous scope guards */
 #define ut_scope_guard_(cleanup) \
     const auto& ut_anonymous_variable_(scopeGuard) = ut::makeScopeGuard(cleanup); \
     ut_anonymous_variable_(scopeGuard).touch()
 
+/** Macro for creating named scope guards */
 #define ut_named_scope_guard_(name, cleanup) \
     const auto& name = ut::makeScopeGuard(cleanup)

@@ -15,7 +15,7 @@
 */
 
 #include "Looper.h"
-#include <CppAwait/impl/Util.h>
+#include <cassert>
 
 using namespace ut;
 
@@ -91,7 +91,7 @@ void Looper::run()
             } while (true);
         }
 
-        ut_assert_(!mQuit);
+        assert (!mQuit);
         
         mContext.runQueued(&mQuit);
 
@@ -105,7 +105,7 @@ void Looper::run()
 
 void Looper::quit()
 {
-    ut_assert_msg_(lthread::this_thread::get_id() == mThreadId, "%s - quit() called from outside the loop!", mName.c_str());
+    assert (lthread::this_thread::get_id() == mThreadId && "quit() called from outside the loop!");
 
     cancelAll();
     mQuit = true;
@@ -113,7 +113,7 @@ void Looper::quit()
 
 bool Looper::cancel(Ticket ticket)
 {
-    ut_assert_msg_(lthread::this_thread::get_id() == mThreadId, "%s - tryCancel() called from outside the loop!", mName.c_str());
+    assert (lthread::this_thread::get_id() == mThreadId && "tryCancel() called from outside the loop!");
 
     bool didCancel = mContext.tryCancelQueued(ticket);
 
@@ -128,7 +128,7 @@ bool Looper::cancel(Ticket ticket)
 
 void Looper::cancelAll()
 {
-    ut_assert_msg_(lthread::this_thread::get_id() == mThreadId, "%s - cancelAll() called from outside the loop!", mName.c_str());
+    assert (lthread::this_thread::get_id() == mThreadId && "cancelAll() called from outside the loop!");
 
     mContext.cancelAllQueued();
 
@@ -178,7 +178,7 @@ namespace detail
                 try {
                     repeat = action->action();
                 } catch(const std::exception& ex) {
-                    ut_log_warn_("Uncaught exception while running loop action: %s", ex.what());
+                    fprintf(stderr, "Uncaught exception while running loop action: %s\n", ex.what());
                     throw;
                 }
 
@@ -250,7 +250,7 @@ namespace detail
             ManagedAction *action = *it;
 
             if (action->ticket == ticket) {
-                ut_assert_(!action->isCancelled);
+                assert (!action->isCancelled);
 
                 delete action;
                 mPendingActions.erase(it);

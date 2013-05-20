@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "../Config.h"
+#include "Config.h"
 #include <cstdarg>
 
 namespace ut {

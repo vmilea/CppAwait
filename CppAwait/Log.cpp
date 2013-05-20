@@ -15,9 +15,10 @@
 */
 
 #include "ConfigPrivate.h"
-#include <CppAwait/impl/Log.h>
-#include <CppAwait/impl/Util.h>
+#include <CppAwait/Log.h>
+#include <CppAwait/impl/StringUtil.h>
 #include <cstring>
+#include <cstdio>
 
 namespace ut {
 

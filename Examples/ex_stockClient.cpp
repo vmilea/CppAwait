@@ -281,20 +281,23 @@ void ex_stockClient()
     stocks["INTC"] = 0;
     stocks["TXN"] = 0;
 
-    printf ("Select version:\n");
-    printf ("1. blocking\n");
-    printf ("2. async await\n");
-    printf ("3. async callbacks\n");
-    printf ("\n");
-    printf ("> ");
+    size_t selected = 0;
 
-    int selected = 0;
-    try {
-        const char* line = readLine();
-        selected = boost::lexical_cast<size_t>(line);
-    } catch (...) {
+    while (selected < 1 || 3 < selected) {
+        printf ("Select version:\n");
+        printf ("1. blocking\n");
+        printf ("2. async await\n");
+        printf ("3. async callbacks\n");
+        printf ("\n");
+        printf ("> ");
+
+        try {
+            const char* line = readLine();
+            selected = boost::lexical_cast<size_t>(line);
+        } catch (...) {
+        }
+        printf ("\n");
     }
-    printf ("\n");
 
     if (selected == 1) {
         fetchStocks_sync(host, port, stocks);

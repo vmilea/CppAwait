@@ -42,7 +42,8 @@
 
 // borrow some helpers from library
 //
-#include <CppAwait/impl/Util.h>
+#include <CppAwait/impl/Foreach.h>
+#include <CppAwait/impl/StringUtil.h>
 
 // borrow foreach
 //

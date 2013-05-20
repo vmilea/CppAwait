@@ -46,9 +46,6 @@ if (CMAKE_COMPILER_IS_GNUCXX)
     add_definitions (--std=gnu++0x -Wno-unused-parameter)
 elseif (MSVC)
     add_definitions (/wd4100 /wd4127 /wd4913)
-
-    # suppress warnings from Boost.Signals2
-    add_definitions (-D_SCL_SECURE_NO_WARNINGS)
 endif()
 
 #

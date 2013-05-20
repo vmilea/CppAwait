@@ -1,0 +1,304 @@
+/*
+* Copyright 2012-2013 Valentin Milea
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*   http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+
+/**
+ * @file  Signals.h
+ *
+ * Declares the Signal class.
+ *
+ */
+
+#pragma once
+
+#include "../Config.h"
+#include "../impl/Assert.h"
+#include "../impl/Foreach.h"
+#include <vector>
+#include <memory>
+#include <functional>
+
+namespace ut {
+
+/** Allows disconnecting a single slot from signal */
+class SignalConnection
+{
+public:
+    /**
+     * Disconnect associated slot
+     *
+     * You may disconnect slots while the signal is being emitted.
+     */
+    void disconnect()
+    {
+        mDisconnect();
+    }
+
+private:
+    SignalConnection(std::function<void ()> disconnect)
+        : mDisconnect(std::move(disconnect)) { }
+
+    std::function<void ()> mDisconnect;
+
+    template <typename Signature>
+    friend class Signal;
+};
+
+/** Lightweight signal - single threaded, no MPL */
+template <typename Signature>
+class Signal
+{
+public:
+    /** Slot signature */
+    typedef std::function<Signature> slot_type;
+
+    /**
+     * Connect a slot
+     *
+     * You may connect slots while the signal is being emitted.
+     *
+     * @param   slot     slot to connect
+     * @return  a connection object that may be used to disconnect slot
+     */
+    SignalConnection connect(slot_type slot)
+    {
+        mHooks.push_back(Hook(std::move(slot)));
+
+        std::shared_ptr<bool> isCanceled = mHooks.back().isCanceled;
+
+        return SignalConnection([isCanceled, this] {
+            if (!*isCanceled) {
+                *isCanceled = true;
+                this->mNumCanceled++;
+
+                this->trimCanceled();
+            }
+        });
+    }
+
+    /**
+     * Disconnect all slots
+     *
+     * You may disconnect slots while the signal is being emitted.
+     */
+    void disconnectAll()
+    {
+        ut_foreach_(auto& hook, mHooks) {
+            *hook.isCanceled = true;
+        }
+        mNumCanceled = mHooks.size();
+
+        trimCanceled();
+    }
+
+protected:
+    /** Abstract class */
+    Signal()
+        : mNumCanceled(0)
+        , mIsEmitting(false) { }
+
+    ~Signal()
+    {
+        disconnectAll();
+    }
+
+    template <typename F>
+    void emit(F&& caller)
+    {
+        ut_assert_(mNumCanceled == 0);
+
+        mIsEmitting = true;
+
+        try {
+            size_t n = mHooks.size();
+
+            for (size_t i = 0; i < n; i++) {
+                const Hook& hook = mHooks[i];
+
+                if (mNumCanceled == 0 || !*hook.isCanceled) {
+                    caller(hook.slot);
+                }
+            }
+        } catch (...) {
+            mIsEmitting = false;
+            trimCanceled();
+            throw;
+        }
+
+        mIsEmitting = false;
+        trimCanceled();
+    }
+
+private:
+    Signal(const Signal<Signature>&); // noncopyable
+    Signal<Signature>& operator=(const Signal<Signature>&); // noncopyable
+
+    void trimCanceled()
+    {
+        if (mNumCanceled == 0 || mIsEmitting) {
+            return;
+        }
+
+        auto pos = std::remove_if(mHooks.begin(), mHooks.end(),
+            [](const Hook& hook) {
+                return *hook.isCanceled;
+        });
+        ut_assert_((size_t) (mHooks.end() - pos) == mNumCanceled);
+
+        mHooks.erase(pos, mHooks.end());
+        mNumCanceled = 0;
+    }
+
+    struct Hook
+    {
+        slot_type slot;
+        std::shared_ptr<bool> isCanceled;
+
+        Hook(slot_type&& slot)
+            : slot(std::move(slot))
+            , isCanceled(std::make_shared<bool>(false)) { }
+    };
+
+    std::vector<Hook> mHooks;
+    size_t mNumCanceled;
+    bool mIsEmitting;
+};
+
+/** Signal with 0 arguments */
+class Signal0 : public Signal<void ()>
+{
+public:
+    Signal0() { }
+
+    void operator()()
+    {
+        typedef Signal0::slot_type slot_type;
+
+        this->emit([](const slot_type& slot) {
+            slot();
+        });
+    }
+
+private:
+    Signal0(const Signal0&); // noncopyable
+    Signal0& operator=(const Signal0&); // noncopyable
+};
+
+/** Signal with 1 argument */
+template <typename Arg1>
+class Signal1 : public Signal<void (const Arg1&)>
+{
+public:
+    Signal1() { }
+
+    void operator()(const Arg1& arg1)
+    {
+        typedef typename Signal1<Arg1>::slot_type slot_type;
+
+        this->emit([&](const slot_type& slot) {
+            slot(arg1);
+        });
+    }
+
+private:
+    Signal1(const Signal1&); // noncopyable
+    Signal1& operator=(const Signal1&); // noncopyable
+};
+
+/** Signal with 2 arguments */
+template <typename Arg1, typename Arg2>
+class Signal2 : public Signal<void (const Arg1&, const Arg2&)>
+{
+public:
+    Signal2() { }
+
+    void operator()(const Arg1& arg1, const Arg2& arg2)
+    {
+        typedef typename Signal2<Arg1, Arg2>::slot_type slot_type;
+
+        this->emit([&](const slot_type& slot) {
+            slot(arg1, arg2);
+        });
+    }
+
+private:
+    Signal2(const Signal2&); // noncopyable
+    Signal2& operator=(const Signal2&); // noncopyable
+};
+
+/** Signal with 3 arguments */
+template <typename Arg1, typename Arg2, typename Arg3>
+class Signal3 : public Signal<void (const Arg1&, const Arg2&, const Arg3&)>
+{
+public:
+    Signal3() { }
+
+    void operator()(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3)
+    {
+        typedef typename Signal3<Arg1, Arg2, Arg3>::slot_type slot_type;
+
+        this->emit([&](const slot_type& slot) {
+            slot(arg1, arg2, arg3);
+        });
+    }
+
+private:
+    Signal3(const Signal3&); // noncopyable
+    Signal3& operator=(const Signal3&); // noncopyable
+};
+
+/** Signal with 4 arguments */
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+class Signal4 : public Signal<void (const Arg1&, const Arg2&, const Arg3&, const Arg4&)>
+{
+public:
+    Signal4() { }
+
+    void operator()(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3, const Arg4& arg4)
+    {
+        typedef typename Signal4<Arg1, Arg2, Arg3, Arg4>::slot_type slot_type;
+
+        this->emit([&](const slot_type& slot) {
+            slot(arg1, arg2, arg3, arg4);
+        });
+    }
+
+private:
+    Signal4(const Signal4&); // noncopyable
+    Signal4& operator=(const Signal4&); // noncopyable
+};
+
+/** Signal with 5 arguments */
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
+class Signal5 : public Signal<void (const Arg1&, const Arg2&, const Arg3&, const Arg4&, const Arg5&)>
+{
+public:
+    Signal5() { }
+
+    void operator()(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3, const Arg4& arg4, const Arg5& arg5)
+    {
+        typedef typename Signal5<Arg1, Arg2, Arg3, Arg4, Arg5>::slot_type slot_type;
+
+        this->emit([&](const slot_type& slot) {
+            slot(arg1, arg2, arg3, arg4, arg5);
+        });
+    }
+
+private:
+    Signal5(const Signal5&); // noncopyable
+    Signal5& operator=(const Signal5&); // noncopyable
+};
+
+}

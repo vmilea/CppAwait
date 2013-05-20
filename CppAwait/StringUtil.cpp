@@ -17,6 +17,7 @@
 #include "ConfigPrivate.h"
 #include <CppAwait/impl/StringUtil.h>
 #include <CppAwait/impl/Assert.h>
+#include <cstdio>
 
 namespace ut {
 

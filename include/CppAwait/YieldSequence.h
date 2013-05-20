@@ -24,8 +24,8 @@
 #pragma once
 
 #include "Config.h"
-#include "impl/Assert.h"
 #include "Coro.h"
+#include "impl/Assert.h"
 #include <iterator>
 
 #define YS_DONE ((void *) -1)
@@ -174,6 +174,9 @@ public:
     };
 
 private:
+    YieldSequence(const YieldSequence<T>& other); // noncopyable
+    YieldSequence<T>& operator=(const YieldSequence<T>& other); // noncopyable
+
     Coro mCoro;
     void *mCurrentValue;
 };
