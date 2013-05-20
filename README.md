@@ -18,18 +18,18 @@ In order for the library to manage coroutines it needs a Scheduler. This must be
 
 Here is a snippet showing typical library use. It connects and transfers some data to a TCP server:
 
-    ut::AwaitableHandle awt;
+    ut::Awaitable awt;
 
-    tcp::resolver::iterator endpoints; // [out]
-    awt = ut::asio::asyncResolve(resolver, query, endpoints);
-    awt->await();
+    tcp::resolver::iterator outEndpoints;
+    awt = ut::asio::asyncResolve(resolver, query, outEndpoints);
+    awt.await();
 
-    for (auto it = endpoints; it != tcp::resolver::iterator(); ++it) {
+    for (auto it = outEndpoints; it != tcp::resolver::iterator(); ++it) {
         tcp::endpoint ep = *it;
         awt = ut::asio::asyncConnect(socket, ep);
 
         try {
-            awt->await();
+            awt.await();
             break; // connected
         } catch (const std::exception&) {
             // try next endpoint
@@ -41,11 +41,11 @@ Here is a snippet showing typical library use. It connects and transfers some da
 
     // write an HTTP request
     awt = ut::asio::asyncWrite(socket, request);
-    awt->await();
+    awt.await();
 
     // read response
     awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n"));
-    awt->await();
+    awt.await();
 
 The _Awaitable_ class is a generic wrapper for asynchronous operations. All asynchronous methods return an _Awaitable_. Its _await()_ method yields control to the main loop until the _Awaitable_ completes or fails, at which point the coroutine resumes. If operation failed the associated exception gets thrown. Note there is no return value -- output parameters such as _endpoints_ must be passed by reference.
 
@@ -56,22 +56,23 @@ Another snippet. Download and archive some files, allowing for archival while ne
 
     std::vector<std::string> urls = { ... };
 
-    ut::AwaitableHandle awtArchive;
+    ut::Awaitable awtArchive;
 
     for (std::string url : urls) {
-        // [out] holds fetched document
+        // holds fetched document
         std::unique_ptr<std::vector<char> > document;
 
-        ut::AwaitableHandle awtFetch = asyncFetch(url, &document);
+        ut::Awaitable awtFetch = asyncFetch(url, &document);
 
         // doesn't block, instead it yields. the coroutine
         // gets resumed when fetch done or on exception.
         awtFetch.await();
 
-        if (awtArchive) {
+        if (!awtArchive.isNil()) {
             awtArchive.await();
         }
         awtArchive = asyncArchive(std::move(document));
+    }
 
 
 There are several [examples](/Examples) included. See [stock client](/Examples/ex_stockClient.cpp) for a direct comparison between classic async and the await pattern.

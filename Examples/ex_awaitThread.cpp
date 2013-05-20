@@ -61,7 +61,9 @@ static ut::Awaitable asyncCountdown()
                 // It's possible the abort comes too late to prevent liftoff. Completer checks
                 // the awaitable is still valid, so nothing happens if it runs after thread.join().
                 //
-                completer.scheduleComplete();
+                ut::schedule([completer]() {
+                    completer();
+                });
             }
         }, awtLiftoff.takeCompleter());
 

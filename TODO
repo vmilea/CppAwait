@@ -1,5 +1,5 @@
-* documentation
+* more documentation
 * more/better examples
 * replace some asserts with exceptions
-* better exception safety
-* formal cancellation
+* decouple scheduler
+* pattern based await

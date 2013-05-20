@@ -162,20 +162,6 @@ public:
     void fail(std::exception_ptr eptr) const;
 
     /**
-     * Schedule complete
-     *
-     * May be called from any coroutine.
-     */
-    void scheduleComplete() const;
-
-    /**
-     * Schedule fail
-     *
-     * May be called from any coroutine.
-     */
-    void scheduleFail(std::exception_ptr eptr) const;
-
-    /**
      * Wraps a callback function
      *
      * The wrapper executes func and immediately finishes Awaitable. Nothing
@@ -284,6 +270,9 @@ public:
 
     /** Take the completer functor */
     Completer takeCompleter();
+
+    /** True if completer not yet taken */
+    bool isNil();
 
     /** Identifier for debugging */
     const char* tag();

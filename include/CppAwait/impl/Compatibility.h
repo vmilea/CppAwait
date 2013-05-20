@@ -46,7 +46,7 @@ std::exception_ptr make_exception_ptr(const T& e)
 //
 inline bool is(const std::exception_ptr& eptr)
 {
-    return eptr != std::exception_ptr();
+    return !(eptr == std::exception_ptr());
 }
 
 // MSVC10 workaround -- no std::declval()

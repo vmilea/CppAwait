@@ -247,11 +247,16 @@ Completer Awaitable::takeCompleter()
 {
     ut_log_info_("* new  evt-awt '%s'", m->tag.c_str());
 
-    ut_assert_(!m->completerGuard && "completer already taken");
+    ut_assert_(isNil() && "completer already taken");
 
     m->completerGuard = std::make_shared<char>();
 
     return Completer(m.get(), m->completerGuard);
+}
+
+bool Awaitable::isNil()
+{
+    return !m->completerGuard;
 }
 
 const char* Awaitable::tag()
@@ -348,24 +353,6 @@ void Completer::fail(std::exception_ptr eptr) const
 
         mAwtImpl->shell->fail(std::move(eptr));
     }
-}
-
-void Completer::scheduleComplete() const
-{
-    Completer completer = *this;
-
-    schedule([completer]() {
-        completer();
-    });
-}
-
-void Completer::scheduleFail(std::exception_ptr eptr) const
-{
-    Completer completer = *this;
-
-    schedule([completer, eptr]() {
-        completer.fail(eptr);
-    });
 }
 
 
