@@ -15,7 +15,6 @@
 */
 
 #include "ExUtil.h"
-#include "AsioScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <array>
@@ -72,7 +71,7 @@ static ut::Awaitable asyncCoroDelay(long delay)
     // on calling coroutine
     std::string tag = ut::string_printf("coro-delay-%ld", delay);
 
-    return ut::startAsync(tag, [=](ut::Awaitable *self) {
+    return ut::startAsync(tag, [=]() {
         // on 'coro-delay' coroutine
         printf ("'%s' - start\n", ut::currentCoro()->tag());
 
@@ -90,7 +89,7 @@ static ut::Awaitable asyncCoroDelay(long delay)
 //
 static ut::Awaitable asyncTest()
 {
-    return ut::startAsync("test", [](ut::Awaitable *self) {
+    return ut::startAsync("test", []() {
         // on 'test' coroutine
         printf ("'%s' - start\n", ut::currentCoro()->tag());
 
@@ -110,17 +109,10 @@ static ut::Awaitable asyncTest()
 
 void ex_awaitBasics()
 {
-    // Your application needs a run loop to alternate between Awaitables.
-    // CppAwait relies on a schedule() hook that must be implemented using your API
-    // of choice (Qt / GLib / MFC / Asio ...).
-    //
-    // here we run on top of Boost.Asio io_service
-    ut::initScheduler(&asioSchedule);
-
     ut::Awaitable awtTest = asyncTest();
 
     // print every 100ms to show main loop is not blocked
-    ut::Awaitable awtTicker = ut::startAsync("ticker", [](ut::Awaitable *self) {
+    ut::Awaitable awtTicker = ut::startAsync("ticker", []() {
         while (true) {
             ut::Awaitable awt = asyncSimpleDelay(100);
             awt.await();
@@ -129,11 +121,21 @@ void ex_awaitBasics()
         }
     });
 
-    // Awaitables started from main stack are fire-and-forget, can't await()
-
     printf ("'%s' - START\n", ut::currentCoro()->tag());
 
+    // Usually there needs to be a run loop to complete Awaitables. This is
+    // application specific (Qt / GLib / MFC / Asio ...) You may want to wrap
+    // it inside a generic scheduler (see ut::initScheduler()).
     ut::asio::io().run();
 
     printf ("'%s' - END\n", ut::currentCoro()->tag());
+
+    // Main routine may not be suspended, so await() is permitted only if Awaitable
+    // is done. Calling await() this way lets you check for unhandled exceptions.
+    //
+    try {
+        awtTest.await();
+    } catch (const std::exception& e) {
+        printf ("crash: %s\n", e.what());
+    }
 }

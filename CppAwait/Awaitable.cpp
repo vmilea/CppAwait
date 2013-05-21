@@ -17,78 +17,11 @@
 #include "ConfigPrivate.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/Log.h>
+#include <CppAwait/impl/StringUtil.h>
 #include <cstdio>
 #include <cstdarg>
 
 namespace ut {
-
-//
-// scheduler
-//
-
-// runs an action unless it has been canceled
-class WeakAction
-{
-public:
-    WeakAction() { }
-
-    WeakAction(const std::shared_ptr<Action>& func)
-        : mAction(func) { }
-
-    WeakAction(const WeakAction& other)
-        : mAction(other.mAction) { }
-
-    WeakAction& operator=(const WeakAction& other)
-    {
-        mAction = other.mAction;
-        return *this;
-    }
-
-    WeakAction(WeakAction&& other)
-        : mAction(std::move(other.mAction)) { }
-
-    WeakAction& operator=(WeakAction&& other)
-    {
-        mAction = std::move(other.mAction);
-        return *this;
-    }
-
-    void operator()() const
-    {
-        if (std::shared_ptr<Action> action = mAction.lock()) {
-            (*action)();
-
-            // reset functor, otherwise it leaks until Ticket reset
-            (*action) = Action(); 
-        }
-    }
-
-private:
-    std::weak_ptr<Action> mAction;
-};
-
-
-static ScheduleFunc sSchedule = nullptr;
-
-void initScheduler(ScheduleFunc schedule)
-{
-    sSchedule = schedule;
-}
-
-void schedule(Action action)
-{
-    sSchedule(std::move(action));
-}
-
-Ticket scheduleWithTicket(Action action)
-{
-    auto sharedAction = std::make_shared<Action>(std::move(action));
-
-    sSchedule(WeakAction(sharedAction));
-
-    return Ticket(std::move(sharedAction));
-}
-
 
 //
 // Awaitable
@@ -122,60 +55,11 @@ Awaitable::Awaitable(std::string tag)
     : m(new AwaitableImpl(std::move(tag)))
 {
     m->shell = this;
-
-    if (sSchedule == nullptr) {
-        throw std::runtime_error("Scheduler hook not setup, you must call initScheduler()");
-    }
 }
 
 Awaitable::~Awaitable()
 {
-    if (!m) {
-        return; // moved
-    }
-
-    const char *reason = (std::uncaught_exception() ? "due to uncaught exception " : "");
-
-    if (didComplete() || didFail()) {
-        ut_log_debug_("* destroy awt '%s' %s(%s)", tag(), reason, (didComplete() ? "completed" : "failed"));
-
-        ut_assert_(m->awaitingCoro == nullptr);
-    } else {
-        ut_log_debug_("* destroy awt '%s' %s(interrupted)", tag(), reason);
-
-        if (m->awaitingCoro != nullptr) {
-            // can't print awaiting coroutine tag since it may have been deleted
-            // (e.g. a persistent Awaitable may outlive its awaiter)
-            ut_log_info_("*  while being awaited");
-            m->awaitingCoro = nullptr;
-        }
-
-        if (m->boundCoro != nullptr) {
-            ut_log_debug_("*  force bound coroutine '%s' to unwind", m->boundCoro->tag());
-
-            ut_assert_(m->boundCoro->isRunning());
-
-            { PushMasterCoro _; // take over
-                // resume coroutine, force fail() via ForcedUnwind
-                forceUnwind(m->boundCoro);
-            }
-
-            ut_log_debug_("*  unwinded '%s' of awt '%s'", m->boundCoro->tag(), tag());
-        } else {
-            ut_log_info_("* fail awt '%s'", tag());
-
-            fail(YieldForbidden::ptr());
-        }
-    }
-
-    if (m->boundCoro != nullptr) {
-        ut_assert_(!m->boundCoro->isRunning());
-        delete m->boundCoro;
-    }
-
-    if (m->userDataDeleter) {
-        m->userDataDeleter();
-    }
+    clear();
 }
 
 Awaitable::Awaitable(Awaitable&& other)
@@ -186,16 +70,19 @@ Awaitable::Awaitable(Awaitable&& other)
 
 Awaitable& Awaitable::operator=(Awaitable&& other)
 {
-    m = std::move(other.m);
-    m->shell = this;
+    if (this != &other) {
+        clear();
+
+        m = std::move(other.m);
+        m->shell = this;
+    }
 
     return *this;
 }
 
 void Awaitable::await()
 {
-    ut_assert_(currentCoro() != masterCoro());
-    ut_assert_(m->awaitingCoro == nullptr);
+    ut_assert_(m->awaitingCoro == nullptr && "already being awaited");
 
     if (m->didComplete) {
         ut_log_debug_("* await '%s' from '%s' (done)", tag(), currentCoro()->tag());
@@ -205,6 +92,9 @@ void Awaitable::await()
         std::rethrow_exception(m->exceptionPtr);
     } else {
         ut_log_debug_("* await '%s' from '%s'", tag(), currentCoro()->tag());
+
+        ut_assert_(!isNil() && "completer not taken");
+        ut_assert_(currentCoro() != masterCoro() && "awaiting would suspend master coro");
 
         m->awaitingCoro = currentCoro();
         yieldTo(masterCoro());
@@ -256,7 +146,7 @@ Completer Awaitable::takeCompleter()
 
 bool Awaitable::isNil()
 {
-    return !m->completerGuard;
+    return !isDone() && !m->completerGuard;
 }
 
 const char* Awaitable::tag()
@@ -286,13 +176,16 @@ void* Awaitable::rawUserDataPtr()
 
 void Awaitable::setAwaitingCoro(Coro *coro)
 {
+    ut_assert_(!isNil() && "completer not taken");
+
     m->awaitingCoro = coro;
 }
 
 void Awaitable::complete()
 {
-    ut_assert_(!didComplete() && "already complete");
-    ut_assert_(!didFail() && "can't complete, already failed");
+    ut_assert_(!didComplete());
+    ut_assert_(!didFail());
+    ut_assert_(!isNil());
 
     m->didComplete = true;
     m->completerGuard = nullptr;
@@ -310,8 +203,9 @@ void Awaitable::complete()
 
 void Awaitable::fail(std::exception_ptr eptr)
 {
-    ut_assert_(!didFail() && "already failed");
-    ut_assert_(!didComplete() && "can't fail, already complete");
+    ut_assert_(!didComplete());
+    ut_assert_(!didFail());
+
     ut_assert_(is(eptr) && "invalid exception_ptr");
 
     m->exceptionPtr = std::move(eptr);
@@ -328,37 +222,58 @@ void Awaitable::fail(std::exception_ptr eptr)
     }
 }
 
-
-//
-// Completer
-//
-
-void Completer::complete() const
+void Awaitable::clear()
 {
-    ut_assert_(currentCoro() == masterCoro());
-
-    if (!mGuard.expired()) {
-        ut_log_info_("* complete awt '%s'", mAwtImpl->shell->tag());
-
-        mAwtImpl->shell->complete();
+    if (!m) {
+        return; // moved
     }
+
+    const char *reason = (std::uncaught_exception() ? "due to uncaught exception " : "");
+
+    if (didComplete() || didFail()) {
+        ut_log_debug_("* destroy awt '%s' %s(%s)", tag(), reason, (didComplete() ? "completed" : "failed"));
+
+        ut_assert_(m->awaitingCoro == nullptr);
+    } else {
+        ut_log_debug_("* destroy awt '%s' %s(interrupted)", tag(), reason);
+
+        if (m->awaitingCoro != nullptr) {
+            // can't print awaiting coroutine tag since it may have been deleted
+            // (e.g. a persistent Awaitable may outlive its awaiter)
+            ut_log_info_("*  while being awaited");
+            m->awaitingCoro = nullptr;
+        }
+
+        if (m->boundCoro != nullptr) {
+            ut_log_debug_("*  force bound coroutine '%s' to unwind", m->boundCoro->tag());
+
+            ut_assert_(m->boundCoro->isRunning());
+
+            { PushMasterCoro _; // take over
+                // resume coroutine, force fail() via ForcedUnwind
+                forceUnwind(m->boundCoro);
+            }
+
+            ut_log_debug_("*  unwinded '%s' of awt '%s'", m->boundCoro->tag(), tag());
+        } else {
+            ut_log_info_("* fail awt '%s'", tag());
+
+            fail(YieldForbidden::ptr());
+        }
+    }
+
+    if (m->boundCoro != nullptr) {
+        ut_assert_(!m->boundCoro->isRunning());
+        delete m->boundCoro;
+    }
+
+    if (m->userDataDeleter) {
+        m->userDataDeleter();
+    }
+
+    m.reset();
 }
 
-void Completer::fail(std::exception_ptr eptr) const
-{
-    ut_assert_(currentCoro() == masterCoro());
-
-    if (!mGuard.expired()) {
-        ut_log_info_("* fail awt '%s'", mAwtImpl->shell->tag());
-
-        mAwtImpl->shell->fail(std::move(eptr));
-    }
-}
-
-
-//
-// helpers
-//
 
 Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize)
 {
@@ -366,7 +281,7 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
 
     Awaitable awt(tag);
 
-    // awt may not be completed from outside coroutine
+    // coroutine owns completer
     awt.m->completerGuard = std::make_shared<char>();
 
     auto coro = new Coro(std::move(tag), [func](void *awtImpl) {
@@ -374,7 +289,7 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
         std::exception_ptr eptr;
 
         try {
-            func(m->shell);
+            func();
 
             ut_log_info_("* complete coro-awt '%s'", m->shell->tag());
         } catch (const ForcedUnwind&) {
@@ -426,6 +341,40 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
     }
 
     return std::move(awt);
+}
+
+
+//
+// Completer
+//
+
+void Completer::complete() const
+{
+    ut_assert_msg_(currentCoro() == masterCoro(),
+        "can't complete from '%s' because '%s' is master coro", currentCoro()->tag(), masterCoro()->tag());
+
+    if (!mGuard.expired()) {
+        ut_log_info_("* complete awt '%s'", mAwtImpl->shell->tag());
+
+        mAwtImpl->shell->complete();
+    }
+}
+
+void Completer::fail(std::exception_ptr eptr) const
+{
+    ut_assert_msg_(currentCoro() == masterCoro(),
+        "can't fail from '%s' because '%s' is master coro", currentCoro()->tag(), masterCoro()->tag());
+
+    if (!mGuard.expired()) {
+        ut_log_info_("* fail awt '%s'", mAwtImpl->shell->tag());
+
+        mAwtImpl->shell->fail(std::move(eptr));
+    }
+}
+
+Awaitable* Completer::awaitable() const
+{
+    return (mGuard.expired() ? nullptr : mAwtImpl->shell);
 }
 
 }

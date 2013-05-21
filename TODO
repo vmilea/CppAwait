@@ -1,5 +1,4 @@
 * more documentation
 * more/better examples
 * replace some asserts with exceptions
-* decouple scheduler
 * pattern based await

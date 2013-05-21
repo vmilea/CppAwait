@@ -97,6 +97,6 @@ std::string string_printf(const char *format, ...)
     std::string s = string_vprintf(format, ap);
     va_end(ap);
     return s;
-} 
+}
 
 }

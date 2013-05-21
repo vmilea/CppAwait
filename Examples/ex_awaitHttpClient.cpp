@@ -15,7 +15,7 @@
 */
 
 #include "ExUtil.h"
-#include "LooScheduler.h"
+#include "Looper/Looper.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <fstream>
@@ -120,7 +120,7 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
 
 static ut::Awaitable asyncHttpDownload(const std::string& host, const std::string& path, const std::string& savePath)
 {
-    return ut::startAsync("asyncHttpDownload", [host, path, savePath](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncHttpDownload", [host, path, savePath]() {
         tcp::socket socket(ut::asio::io());
         auto response = std::make_shared<streambuf>();
         size_t contentLength;
@@ -145,7 +145,7 @@ static ut::Awaitable asyncHttpDownload(const std::string& host, const std::strin
             printf ("HTTP download failed: %s\n", e.what());
         }
 
-        ut::schedule([]() {
+        loo::mainLooper().schedule([] {
             loo::mainLooper().quit();
         });
     });
@@ -156,8 +156,6 @@ void ex_awaitHttpClient()
     // use a custom run loop
     loo::Looper mainLooper("main");
     loo::setMainLooper(mainLooper);
-
-    ut::initScheduler(&looSchedule);
 
     // Dispatch Boost.Asio ready handlers every 5ms. This is a simple way to integrate
     // Asio into your GUI without hogging CPU. Having Asio drive the run loop instead

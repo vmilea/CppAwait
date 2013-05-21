@@ -19,7 +19,6 @@
 #include <CppAwait/Config.h>
 #include "Chrono.h"
 #include "Thread.h"
-#include "Scheduler.h"
 #include <vector>
 #include <memory>
 #include <utility>
@@ -154,11 +153,6 @@ public:
 
     }
 
-    operator AbstractScheduler&()
-    {
-        return *mSchedulerAdapter;
-    }
-
 private:
     typedef lthread::timed_mutex Mutex;
     typedef lthread::lock_guard<Mutex> LockGuard;
@@ -168,8 +162,6 @@ private:
 
     Mutex mMutex;
     lthread::condition_variable_any mMutexCond;
-
-    std::unique_ptr<AbstractScheduler> mSchedulerAdapter;
 
     std::string mName;
 

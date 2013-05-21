@@ -37,26 +37,6 @@ Looper::Looper(const std::string& name)
     : mName(name)
     , mQuit(false)
 {
-    struct SchedulerAdapter : public AbstractScheduler
-    {
-    public:
-        SchedulerAdapter(Looper& looper)
-            : looper(looper) { }
-
-        void schedule(const Action& action)
-        {
-            looper.schedule(action);
-        }
-
-        void schedule(Action&& action)
-        {
-            looper.schedule(std::move(action));
-        }
-
-        Looper& looper;
-    };
-
-    mSchedulerAdapter.reset(new SchedulerAdapter(*this));
 }
 
 Looper::~Looper()

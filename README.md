@@ -13,7 +13,7 @@ How it works
 
 CppAwait provides an _await_ construct similar to the one from C# 5 (see [MSDN](http://msdn.microsoft.com/en-us/library/hh191443.aspx)). Upon reaching an _await_ expression the C# compiler automatically transforms the rest of the method into a task continuation. In C++ a similar effect can be achieved through coroutines (which CppAwait implements on top of Boost.Context). Calling _await()_ will suspend a coroutine until the associated task completes. The program is free to do other work while coroutine is suspended.
 
-In order for the library to manage coroutines it needs a Scheduler. This must be implemented by the program via a run loop.
+Your program needs a run loop to manage asynchronous operations.
 
 
 Here is a snippet showing typical library use. It connects and transfers some data to a TCP server:

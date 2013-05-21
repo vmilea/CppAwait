@@ -23,8 +23,8 @@
 
 #ifdef NDEBUG
 
-#define ut_assert_(_condition) 
-#define ut_assert_msg_(_condition, _format, ...) 
+#define ut_assert_(_condition)
+#define ut_assert_msg_(_condition, _format, ...)
 
 #else
 

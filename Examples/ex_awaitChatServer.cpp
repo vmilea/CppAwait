@@ -15,7 +15,6 @@
 */
 
 #include "ExUtil.h"
-#include "AsioScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <set>
@@ -148,7 +147,7 @@ public:
         auto recv = std::make_shared<boost::asio::streambuf>();
 
         // this coroutine reads inbound messages
-        ut::Awaitable::AsyncFunc writer = [this](ut::Awaitable * /* awtSelf */) {
+        ut::Awaitable::AsyncFunc writer = [this]() {
             do {
                 if (mMsgQueue.empty()) {
                     ut::Awaitable awtMsgQueued("evt-msg-queued");
@@ -166,7 +165,7 @@ public:
         };
 
         // this coroutine writes outbound messages
-        ut::Awaitable::AsyncFunc reader = [this, recv](ut::Awaitable * /* awtSelf */) {
+        ut::Awaitable::AsyncFunc reader = [this, recv]() {
             std::string line;
 
             bool quit = false;
@@ -186,7 +185,7 @@ public:
         };
 
         // main coroutine handles handshake, reads & writes
-        mAwt = ut::startAsync("clientSession-start", [this, writer, reader, recv](ut::Awaitable * /* awtSelf */) {
+        mAwt = ut::startAsync("clientSession-start", [this, writer, reader, recv]() {
             // first message is nickname
             ut::Awaitable awt = ut::asio::asyncReadUntil(*mSocket, recv, std::string("\n"));
             awt.await();
@@ -227,7 +226,7 @@ inline ut::Awaitable* selectAwaitable(std::unique_ptr<ClientSession>& element)
 static ut::Awaitable asyncChatServer(unsigned short port)
 {
     // main coroutine manages client sessions
-    return ut::startAsync("asyncChatServer", [port](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncChatServer", [port]() {
         typedef std::list<std::unique_ptr<ClientSession> > SessionList;
 
         ChatRoom room;
@@ -296,9 +295,6 @@ static ut::Awaitable asyncChatServer(unsigned short port)
 
 void ex_awaitChatServer()
 {
-    // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioSchedule);
-
     ut::Awaitable awt = asyncChatServer(3455);
 
     // loops until all async handlers have ben dispatched

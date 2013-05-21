@@ -15,7 +15,6 @@
 */
 
 #include "ExUtil.h"
-#include "AsioScheduler.h"
 #include <CppAwait/AsioWrappers.h>
 #include "Looper/Thread.h"
 #include <queue>
@@ -47,7 +46,7 @@ static void inputFunc()
         std::string line = readLine();
 
         // process the message on main loop
-        ut::schedule([line]() {
+        ut::asio::io().post([line]() {
             sMsgQueue.push(std::make_shared<std::string>(line + "\n"));
 
             // wake up writer
@@ -63,7 +62,7 @@ static void inputFunc()
 static ut::Awaitable asyncChatClient(const std::string& host, const std::string& port, const std::string& nickname)
 {
     // this coroutine reads & prints inbound messages
-    auto reader = [](tcp::socket& socket, ut::Awaitable * /* awtSelf */) {
+    auto reader = [](tcp::socket& socket) {
         auto recv = std::make_shared<boost::asio::streambuf>();
         std::string msg;
 
@@ -79,7 +78,7 @@ static ut::Awaitable asyncChatClient(const std::string& host, const std::string&
     };
 
     // this coroutine writes outbound messages
-    auto writer = [](tcp::socket& socket, ut::Awaitable * /* awtSelf */) {
+    auto writer = [](tcp::socket& socket) {
         bool quit = false;
 
         do {
@@ -103,7 +102,7 @@ static ut::Awaitable asyncChatClient(const std::string& host, const std::string&
     };
 
     // main coroutine handles connection, handshake, reads & writes
-    return ut::startAsync("asyncChatClient", [host, port, nickname, reader, writer](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncChatClient", [host, port, nickname, reader, writer]() {
         try {
             ut::Awaitable awt;
 
@@ -134,13 +133,13 @@ static ut::Awaitable asyncChatClient(const std::string& host, const std::string&
             inputThread.detach();
 
             // this coroutine reads & prints inbound messages
-            ut::Awaitable awtReader = ut::startAsync("chatClient-reader", [=, &socket](ut::Awaitable *awtSelf) {
-                reader(socket, awtSelf);
+            ut::Awaitable awtReader = ut::startAsync("chatClient-reader", [=, &socket]() {
+                reader(socket);
             });
 
             // this coroutine writes outbound messages
-            ut::Awaitable awtWriter = ut::startAsync("chatClient-writer", [=, &socket](ut::Awaitable *awtSelf) {
-                writer(socket, awtSelf);
+            ut::Awaitable awtWriter = ut::startAsync("chatClient-writer", [=, &socket]() {
+                writer(socket);
             });
 
             // quit on /leave or Asio exception
@@ -163,9 +162,6 @@ void ex_awaitChatClient()
 {
     printf ("your nickname: ");
     std::string nickname = readLine();
-
-    // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioSchedule);
 
     ut::Awaitable awt = asyncChatClient("localhost", "3455", nickname);
 

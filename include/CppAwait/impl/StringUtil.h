@@ -39,7 +39,7 @@ int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap);
 
 
 int safe_printf(std::vector<char>& outBuf, size_t pos, const char *format, ...);
-int safe_vprintf(std::vector<char>& outBuf, size_t pos, const char *format, va_list ap);  
+int safe_vprintf(std::vector<char>& outBuf, size_t pos, const char *format, va_list ap);
 
 std::string string_printf(const char *format, ...);
 std::string string_vprintf(const char *format, va_list ap);

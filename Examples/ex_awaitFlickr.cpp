@@ -15,7 +15,6 @@
 */
 
 #include "ExUtil.h"
-#include "AsioScheduler.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
 #include <fstream>
@@ -130,7 +129,7 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
 {
     static const int MAX_PARALLEL_DOWNLOADS = 6;
 
-    return ut::startAsync("asyncFlickrDownload", [tags, numPics, numPicsPerPage](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncFlickrDownload", [tags, numPics, numPicsPerPage]() {
         struct DownloadSlot
         {
             std::unique_ptr<ut::Awaitable> awaitable;
@@ -152,14 +151,12 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
             int numSlotsUsed = 0;
 
             auto startFetch = [&](DownloadSlots::iterator pos, FlickrPhoto& photo) {
-                assert (!pos->awaitable); // slot must be available
+                assert (pos->photo == nullptr); // slot must be available
 
                 auto photoUrl = makeFlickrPhotoUrl(photo);
                 printf (" fetching %s%s ...\n", photoUrl.first.c_str(), photoUrl.second.c_str());
 
-                ut::Awaitable awt = ut::asio::asyncHttpDownload(photoUrl.first, photoUrl.second, pos->buf);
-
-                pos->awaitable = ut::make_unique<ut::Awaitable>(std::move(awt));
+                pos->awaitable = ut::asUniquePtr(ut::asio::asyncHttpDownload(photoUrl.first, photoUrl.second, pos->buf));
                 pos->photo = &photo;
 
                 numSlotsUsed++;
@@ -170,7 +167,7 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
                 // download a page
                 auto queryUrl = makeFlickrQueryUrl(tags, numPicsPerPage, page);
                 auto response = std::make_shared<streambuf>();
-                ut::Awaitable awt = ut::asio::asyncHttpDownload(queryUrl.first, queryUrl.second, response); 
+                ut::Awaitable awt = ut::asio::asyncHttpDownload(queryUrl.first, queryUrl.second, response);
                 awt.await();
 
                 // parse xml
@@ -224,9 +221,6 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
 
 void ex_awaitFlickr()
 {
-    // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioSchedule);
-
     printf ("tags (default 'kitten'): ");
     std::string tags = readLine();
 

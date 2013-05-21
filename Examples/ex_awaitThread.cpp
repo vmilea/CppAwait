@@ -15,25 +15,29 @@
 */
 
 #include "ExUtil.h"
-#include "LooScheduler.h"
+#include "Looper/Thread.h"
 #include <CppAwait/Awaitable.h>
-#include <Looper/Looper.h>
 #include <random>
 #include <cmath>
-
-// try to use std::thread, fallback to boost::thread
-//
-using namespace loo::lthread;
-using namespace loo::lchrono;
+#include <boost/asio.hpp>
 
 //
 // ABOUT: how to implement an Awaitable on top of threads,
 //        how to handle interruption
 //
 
+// try to use std::thread, fallback to boost::thread
+//
+using namespace loo::lthread;
+using namespace loo::lchrono;
+
+// run loop
+//
+static boost::asio::io_service sIo;
+
 static ut::Awaitable asyncCountdown()
 {
-    return ut::startAsync("asyncCountdown", [](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncCountdown", []() {
         timed_mutex mutex;
         condition_variable_any cond;
         bool isInterrupted = false;
@@ -61,9 +65,7 @@ static ut::Awaitable asyncCountdown()
                 // It's possible the abort comes too late to prevent liftoff. Completer checks
                 // the awaitable is still valid, so nothing happens if it runs after thread.join().
                 //
-                ut::schedule([completer]() {
-                    completer();
-                });
+                sIo.post(completer);
             }
         }, awtLiftoff.takeCompleter());
 
@@ -86,7 +88,7 @@ static ut::Awaitable asyncCountdown()
 
 static ut::Awaitable asyncKey()
 {
-    return ut::startAsync("asyncKey", [](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncKey", []() {
         ut::Coro *coro = ut::currentCoro();
 
         thread keyThread([&]() {
@@ -95,7 +97,7 @@ static ut::Awaitable asyncKey()
             // thread at any time.
             readLine();
 
-            ut::schedule([&]() {
+            sIo.post([&]() {
                 // vulnerable to coro being destroyed in the meantime
                 ut::yieldTo(coro);
             });
@@ -117,7 +119,7 @@ static ut::Awaitable asyncKey()
 
 static ut::Awaitable asyncThread()
 {
-    return ut::startAsync("asyncThread", [](ut::Awaitable * /* awtSelf */) {
+    return ut::startAsync("asyncThread", []() {
         printf ("hit [Return] to abort launch\n\n");
 
         {
@@ -128,23 +130,21 @@ static ut::Awaitable asyncThread()
             ut::awaitAny(awtCountdown, awtKey);
 
             // scope end, the other awaitable will interrupt itself
-        }
 
-        ut::schedule([]() {
-            loo::mainLooper().quit();
-        });
+            sIo.stop();
+        }
     });
 }
 
 void ex_awaitThread()
 {
-    // use a custom run loop
-    loo::Looper mainLooper("main");
-    loo::setMainLooper(mainLooper);
-
-    ut::initScheduler(&looSchedule);
-
     ut::Awaitable awt = asyncThread();
 
-    mainLooper.run();
+    // io_service::run() quits immediately if there's nothing scheduled
+
+    // setup a dummy timer
+    boost::asio::deadline_timer timer(sIo, boost::posix_time::hours(1));
+    timer.async_wait([](const boost::system::error_code& ec) { });
+
+    sIo.run();
 }

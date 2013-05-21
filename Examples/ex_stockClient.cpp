@@ -19,7 +19,6 @@
 //        1. blocking / 2. async await / 3. async callbacks
 
 #include "ExUtil.h"
-#include "AsioScheduler.h"
 #include <CppAwait/AsioWrappers.h>
 #include <map>
 #include <functional>
@@ -85,10 +84,7 @@ static void fetchStocks_sync(const std::string& host, const std::string& port, S
 
 static void fetchStocks_asyncAwait(const std::string& host, const std::string& port, StockMap& stocks)
 {
-    // setup a scheduler on top of Boost.Asio io_service
-    ut::initScheduler(&asioSchedule);
-
-    ut::Awaitable awt = ut::startAsync("asyncFetchStocks", [&](ut::Awaitable * /* awtSelf */) {
+    ut::Awaitable awt = ut::startAsync("asyncFetchStocks", [&]() {
         try {
             ut::Awaitable awt;
 

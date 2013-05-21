@@ -19,6 +19,7 @@
 #include "../Config.h"
 #include "Assert.h"
 #include <exception>
+#include <memory>
 
 namespace ut {
 

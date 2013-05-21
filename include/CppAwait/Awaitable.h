@@ -31,89 +31,7 @@
 
 namespace ut {
 
-/**
- * @name Scheduling hook
- *
- * Hook for integration with the main loop of your program (Qt / GLib / MFC / Asio ...)
- */
-///@{
-
-/**
- * Hook signature -- schedule an action
- * @param action    action to run
- *
- * Note:
- * - action shall not be invoked from within this function
- * - schedule(a), schedule(b) implies a runs before b
- */
-typedef void (*ScheduleFunc)(Action action);
-
-/** Setup scheduling hook. This must be done before using Awaitable. */
-void initScheduler(ScheduleFunc schedule);
-
-//
-// generic scheduling interface
-//
-
-/** Unique handle for a scheduled action, may be used to cancel the action */
-class Ticket
-{
-public:
-    /** Create a dummy ticket */
-    Ticket() { }
-
-    /** Move constructor */
-    Ticket(Ticket&& other)
-        : mAction(std::move(other.mAction)) { }
-
-    /** Move assignment */
-    Ticket& operator=(Ticket&& other)
-    {
-        mAction = std::move(other.mAction);
-        return *this;
-    }
-
-    /** Cancels action */
-    ~Ticket() { }
-
-    /**
-     * Check if ticket is attached to an action
-     *
-     * Returns true unless ticket is dummy or reset. This is unrelated
-     * to action having run or not.
-     */
-    operator bool()
-    {
-        return mAction.get() != nullptr;
-    }
-
-    /** Reset ticket, cancels action */
-    void reset()
-    {
-        mAction.reset();
-    }
-
-private:
-    Ticket(std::shared_ptr<Action>&& action)
-        : mAction(std::move(action)) { }
-
-    Ticket(const Ticket& other); // delete
-    Ticket& operator=(const Ticket& other); // delete
-
-    std::shared_ptr<Action> mAction;
-
-    friend Ticket scheduleWithTicket(Action action);
-};
-
-/** Schedule an action */
-void schedule(Action action);
-
-/** Schedule an action. Supports cancellation: destroying the ticket will implicitly cancel the action */
-Ticket scheduleWithTicket(Action action);
-
-///@}
-
-
+class Awaitable;
 struct AwaitableImpl;
 
 namespace detail
@@ -126,7 +44,7 @@ namespace detail
  * Handle for completing an Awaitable
  *
  * Completer is copyable. The first Completer to complete() / fail()
- * the Awaitable wins, and the rest become no-op.
+ * the Awaitable wins, and the rest expire.
  */
 class Completer
 {
@@ -134,12 +52,6 @@ public:
     /** Construct a dummy completer */
     Completer()
         : mAwtImpl(nullptr) { }
-
-    /** Check if associated awaitable is done */
-    bool isExpired()
-    {
-        return mGuard.expired();
-    }
 
     /** Calls complete() */
     void operator()() const
@@ -150,14 +62,14 @@ public:
     /**
      * Complete awaitable; resumes awaiting coroutine
      *
-     * Must be called from master coroutine.
+     * Must be called from master coroutine. Does nothing if expired.
      */
     void complete() const;
 
     /**
      * Fail awaitable; throws exception on awaiting coroutine
      *
-     * Must be called from master coroutine.
+     * Must be called from master coroutine. Does nothing if expired.
      */
     void fail(std::exception_ptr eptr) const;
 
@@ -173,10 +85,19 @@ public:
      * @return wrapped func
      */
     template <typename F>
-    detail::CallbackWrapper<F> wrap(F func)
+    detail::CallbackWrapper<F> wrap(F func) const
     {
         return detail::CallbackWrapper<F>(*this, std::move(func));
     }
+
+    /** Check if associated awaitable is done */
+    bool isExpired() const
+    {
+        return mGuard.expired();
+    }
+
+    /** Returns associated awaitable if not expired, nullptr otherwise. */
+    Awaitable* awaitable() const;
 
 private:
     Completer(AwaitableImpl *awtImpl, const std::shared_ptr<void>& guard)
@@ -219,7 +140,7 @@ class Awaitable
 {
 public:
     /** Coroutine signature required by startAsync() */
-    typedef std::function<void (Awaitable *awtSelf)> AsyncFunc;
+    typedef std::function<void ()> AsyncFunc;
 
     /** Signal emitted on complete / fail */
     typedef Signal1<Awaitable*> OnDoneSignal;
@@ -229,10 +150,20 @@ public:
 
     ~Awaitable();
 
-    /** Move constructor */
+    /**
+     * Move constructor
+     *
+     * After move, 'other' may only be destructed or assigned to. Anything else
+     * is undefined behavior.
+     */
     Awaitable(Awaitable&& other);
 
-    /** Move assignment */
+    /**
+     * Move assignment
+     *
+     * After move, 'other' may only be destructed or assigned to. Anything else
+     * is undefined behavior.
+     */
     Awaitable& operator=(Awaitable&& other);
 
     /**
@@ -323,6 +254,8 @@ private:
 
     void fail(std::exception_ptr eptr);
 
+    void clear();
+
     std::unique_ptr<AwaitableImpl> m;
 
     template <typename Collection>
@@ -356,6 +289,7 @@ private:
  * It's expected func will exit immediately upon ForcedUnwind, make sure not to
  * ignore it in a catch (...) handler.
  *
+ * Actions created this way have their completer already taken.
  */
 Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize = Coro::defaultStackSize());
 
@@ -491,7 +425,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
 template <typename Collection>
 Awaitable asyncAll(Collection& awaitables)
 {
-    return startAsync("asyncAll", [&awaitables](Awaitable* /* awtSelf */) {
+    return startAsync("asyncAll", [&awaitables]() {
         awaitAll(awaitables);
     });
 }
@@ -500,7 +434,7 @@ Awaitable asyncAll(Collection& awaitables)
 template <typename Collection>
 Awaitable asyncAny(Collection& awaitables, typename Collection::iterator& pos)
 {
-    return startAsync("asyncAny", [&awaitables, &pos](Awaitable* /* awtSelf */) {
+    return startAsync("asyncAny", [&awaitables, &pos]() {
         if (awaitables.empty()) {
             yieldTo(masterCoro()); // never complete
         } else {

@@ -100,7 +100,7 @@ Awaitable asyncHttpDownload(const std::string& host, const std::string& path, st
     static int id = 0;
     auto tag = string_printf("asyncHttpDownload-%d", id++);
 
-    return startAsync(tag, [host, path, outResponse](Awaitable * /* awtSelf */) {
+    return startAsync(tag, [host, path, outResponse]() {
         tcp::socket socket(io());
 
         size_t contentLength;
