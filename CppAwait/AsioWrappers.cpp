@@ -30,7 +30,7 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
 {
     Awaitable awt;
 
-    tcp::resolver resolver(io());
+    tcp::resolver resolver(socket.get_io_service());
     tcp::resolver::query query(host, "http");
 
     // DNS resolve
@@ -95,13 +95,13 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     }
 }
 
-Awaitable asyncHttpDownload(const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse)
+Awaitable asyncHttpDownload(boost::asio::io_service& io, const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse)
 {
     static int id = 0;
     auto tag = string_printf("asyncHttpDownload-%d", id++);
 
-    return startAsync(tag, [host, path, outResponse]() {
-        tcp::socket socket(io());
+    return startAsync(tag, [&io, host, path, outResponse]() {
+        tcp::socket socket(io);
 
         size_t contentLength;
         doAsyncHttpGetHeader(socket, host, path, outResponse, contentLength);

@@ -84,18 +84,20 @@ static void fetchStocks_sync(const std::string& host, const std::string& port, S
 
 static void fetchStocks_asyncAwait(const std::string& host, const std::string& port, StockMap& stocks)
 {
+    boost::asio::io_service io;
+
     ut::Awaitable awt = ut::startAsync("asyncFetchStocks", [&]() {
         try {
             ut::Awaitable awt;
 
-            tcp::resolver resolver(ut::asio::io());
+            tcp::resolver resolver(io);
             tcp::resolver::query query(tcp::v4(), host, port);
 
             tcp::resolver::iterator itEndpoints;
             awt = ut::asio::asyncResolve(resolver, query, itEndpoints);
             awt.await();
 
-            tcp::socket socket(ut::asio::io());
+            tcp::socket socket(io);
 
             tcp::resolver::iterator itConnected;
             awt = ut::asio::asyncConnect(socket, itEndpoints, itConnected);
@@ -133,7 +135,7 @@ static void fetchStocks_asyncAwait(const std::string& host, const std::string& p
     });
 
     // run main loop; loops until all async handlers have ben dispatched
-    ut::asio::io().run();
+    io.run();
 }
 
 

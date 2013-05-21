@@ -23,6 +23,10 @@
 // ABOUT: how to define, use & combine Awaitables
 //
 
+// run loop
+static boost::asio::io_service sIo;
+
+
 // simple awaitable without coroutine
 //
 static ut::Awaitable asyncSimpleDelay(long delay)
@@ -40,7 +44,7 @@ static ut::Awaitable asyncSimpleDelay(long delay)
     // from master coroutine (i.e. your main loop).
 
     auto timer = new boost::asio::deadline_timer(
-        ut::asio::io(), boost::posix_time::milliseconds(delay));
+        sIo, boost::posix_time::milliseconds(delay));
 
     ut::Completer completer = awt.takeCompleter();
 
@@ -103,7 +107,7 @@ static ut::Awaitable asyncTest()
 
         printf ("'%s' - done\n", ut::currentCoro()->tag());
 
-        ut::asio::io().stop();
+        sIo.stop();
     });
 }
 
@@ -126,7 +130,7 @@ void ex_awaitBasics()
     // Usually there needs to be a run loop to complete Awaitables. This is
     // application specific (Qt / GLib / MFC / Asio ...) You may want to wrap
     // it inside a generic scheduler (see ut::initScheduler()).
-    ut::asio::io().run();
+    sIo.run();
 
     printf ("'%s' - END\n", ut::currentCoro()->tag());
 

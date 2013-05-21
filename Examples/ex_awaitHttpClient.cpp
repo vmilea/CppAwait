@@ -26,14 +26,17 @@
 // ABOUT: download an HTTP file using boost::asio wrappers
 //
 
-using namespace boost::asio;
 using namespace boost::asio::ip;
 
-static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse, size_t& outContentLength)
+
+static boost::asio::io_service sIo;
+
+
+static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, std::shared_ptr<boost::asio::streambuf> outResponse, size_t& outContentLength)
 {
     ut::Awaitable awt;
 
-    tcp::resolver resolver(ut::asio::io());
+    tcp::resolver resolver(sIo);
     tcp::resolver::query query(host, "http");
 
     // DNS resolve
@@ -62,7 +65,7 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
 
     printf ("connected!\n");
 
-    auto request = std::make_shared<streambuf>();
+    auto request = std::make_shared<boost::asio::streambuf>();
 
     // write HTTP request
     std::ostream requestStream(request.get());
@@ -121,8 +124,8 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
 static ut::Awaitable asyncHttpDownload(const std::string& host, const std::string& path, const std::string& savePath)
 {
     return ut::startAsync("asyncHttpDownload", [host, path, savePath]() {
-        tcp::socket socket(ut::asio::io());
-        auto response = std::make_shared<streambuf>();
+        tcp::socket socket(sIo);
+        auto response = std::make_shared<boost::asio::streambuf>();
         size_t contentLength;
         size_t numBytesTransferred;
 
@@ -131,7 +134,8 @@ static ut::Awaitable asyncHttpDownload(const std::string& host, const std::strin
             doAsyncHttpGetHeader(socket, host, path, response, contentLength);
 
             // transfer remaining content
-            ut::Awaitable awt = ut::asio::asyncRead(socket, response, transfer_exactly(contentLength - response->size()), numBytesTransferred);
+            ut::Awaitable awt = ut::asio::asyncRead(socket, response,
+                    boost::asio::transfer_exactly(contentLength - response->size()), numBytesTransferred);
             awt.await();
 
             printf("saving %ld bytes to file '%s' ...\n", (long) response->size(), savePath.c_str());
@@ -162,10 +166,10 @@ void ex_awaitHttpClient()
     // may give better performance (see Flickr example).
     //
     mainLooper.scheduleRepeating([]() -> bool {
-        if (ut::asio::io().stopped()) {
-            ut::asio::io().reset();
+        if (sIo.stopped()) {
+            sIo.reset();
         }
-        ut::asio::io().poll();
+        sIo.poll();
 
         return true;
     }, 0, 5);

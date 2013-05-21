@@ -37,12 +37,6 @@
 
 namespace ut { namespace asio {
 
-inline boost::asio::io_service& io()
-{
-    static boost::asio::io_service io;
-    return io;
-}
-
 inline std::exception_ptr eptr(const boost::system::error_code& ec)
 {
     if (ec) {
@@ -67,11 +61,11 @@ inline Awaitable asyncWait(Timer& timer)
 }
 
 template <typename DurationType>
-Awaitable asyncDelay(const DurationType& delay)
+Awaitable asyncDelay(boost::asio::io_service& io, const DurationType& delay)
 {
     ut::Awaitable awt("asyncDelay");
 
-    auto timer = new boost::asio::deadline_timer(io(), delay);
+    auto timer = new boost::asio::deadline_timer(io, delay);
 
     timer->async_wait(
                       awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
@@ -277,6 +271,6 @@ inline Awaitable asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::
 }
 
 
-Awaitable asyncHttpDownload(const std::string& host, const std::string& path, std::shared_ptr<boost::asio::streambuf> outResponse);
+Awaitable asyncHttpDownload(boost::asio::io_service& io, const std::string& host, const std::string& path, std::shared_ptr<boost::asio::streambuf> outResponse);
 
 } }

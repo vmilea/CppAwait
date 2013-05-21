@@ -24,12 +24,16 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 
-using namespace boost::asio;
-using namespace boost::asio::ip;
-
 //
 // ABOUT: fetch pictures from Flickr
 //
+
+using namespace boost::asio::ip;
+
+
+// run loop
+static boost::asio::io_service sIo;
+
 
 //
 // flickr utils
@@ -54,7 +58,7 @@ struct FlickrPhotos
     std::vector<FlickrPhoto> photos;
 };
 
-static FlickrPhotos parseFlickrResponse(streambuf& response)
+static FlickrPhotos parseFlickrResponse(boost::asio::streambuf& response)
 {
     namespace pt = boost::property_tree;
 
@@ -133,11 +137,11 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
         struct DownloadSlot
         {
             std::unique_ptr<ut::Awaitable> awaitable;
-            std::shared_ptr<streambuf> buf;
+            std::shared_ptr<boost::asio::streambuf> buf;
             FlickrPhoto *photo;
 
             DownloadSlot()
-                : buf(std::make_shared<streambuf>())
+                : buf(std::make_shared<boost::asio::streambuf>())
                 , photo(nullptr) { }
         };
 
@@ -156,7 +160,7 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
                 auto photoUrl = makeFlickrPhotoUrl(photo);
                 printf (" fetching %s%s ...\n", photoUrl.first.c_str(), photoUrl.second.c_str());
 
-                pos->awaitable = ut::asUniquePtr(ut::asio::asyncHttpDownload(photoUrl.first, photoUrl.second, pos->buf));
+                pos->awaitable = ut::asUniquePtr(ut::asio::asyncHttpDownload(sIo, photoUrl.first, photoUrl.second, pos->buf));
                 pos->photo = &photo;
 
                 numSlotsUsed++;
@@ -166,8 +170,8 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
             while (totalPicsRemaining > 0) {
                 // download a page
                 auto queryUrl = makeFlickrQueryUrl(tags, numPicsPerPage, page);
-                auto response = std::make_shared<streambuf>();
-                ut::Awaitable awt = ut::asio::asyncHttpDownload(queryUrl.first, queryUrl.second, response);
+                auto response = std::make_shared<boost::asio::streambuf>();
+                ut::Awaitable awt = ut::asio::asyncHttpDownload(sIo, queryUrl.first, queryUrl.second, response);
                 awt.await();
 
                 // parse xml
@@ -236,5 +240,5 @@ void ex_awaitFlickr()
     ut::Awaitable awt = asyncFlickrDownload(splitTags, 25, 10);
 
     // loops until all async handlers have ben dispatched
-    ut::asio::io().run();
+    sIo.run();
 }

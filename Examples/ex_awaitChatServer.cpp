@@ -24,10 +24,15 @@
 // ABOUT: chat server, similar to Asio chat example
 //
 
-using namespace boost::asio;
 using namespace boost::asio::ip;
 
+
 typedef std::shared_ptr<const std::string> MessageCRef;
+
+
+// run loop
+static boost::asio::io_service sIo;
+
 
 inline MessageCRef packMessage(const std::string& sender, const std::string& line)
 {
@@ -112,7 +117,7 @@ class ClientSession : public Guest
 public:
     ClientSession(ChatRoom& room)
         : mRoom(room)
-        , mSocket(std::make_shared<tcp::socket>(ut::asio::io())) { }
+        , mSocket(std::make_shared<tcp::socket>(sIo)) { }
 
     // deleting the session will interrupt the coroutine
     ~ClientSession() { }
@@ -234,7 +239,7 @@ static ut::Awaitable asyncChatServer(unsigned short port)
 
         tcp::endpoint endpoint(tcp::v4(), port);
 
-        tcp::acceptor acceptor(ut::asio::io(), endpoint.protocol());
+        tcp::acceptor acceptor(sIo, endpoint.protocol());
         try {
             acceptor.bind(endpoint);
             acceptor.listen();
@@ -298,5 +303,5 @@ void ex_awaitChatServer()
     ut::Awaitable awt = asyncChatServer(3455);
 
     // loops until all async handlers have ben dispatched
-    ut::asio::io().run();
+    sIo.run();
 }

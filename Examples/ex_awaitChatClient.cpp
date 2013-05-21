@@ -27,7 +27,12 @@ using namespace boost::asio::ip;
 using namespace loo::lthread;
 using namespace loo::lchrono;
 
+
 typedef std::shared_ptr<const std::string> MessageCRef;
+
+
+// run loop
+static boost::asio::io_service sIo;
 
 // holds outbound messages
 static std::queue<MessageCRef> sMsgQueue;
@@ -46,7 +51,7 @@ static void inputFunc()
         std::string line = readLine();
 
         // process the message on main loop
-        ut::asio::io().post([line]() {
+        sIo.post([line]() {
             sMsgQueue.push(std::make_shared<std::string>(line + "\n"));
 
             // wake up writer
@@ -106,9 +111,9 @@ static ut::Awaitable asyncChatClient(const std::string& host, const std::string&
         try {
             ut::Awaitable awt;
 
-            tcp::socket socket(ut::asio::io());
+            tcp::socket socket(sIo);
 
-            tcp::resolver resolver(ut::asio::io());
+            tcp::resolver resolver(sIo);
             tcp::resolver::query query(tcp::v4(), host, port);
 
             tcp::resolver::iterator itEndpoints;
@@ -166,5 +171,5 @@ void ex_awaitChatClient()
     ut::Awaitable awt = asyncChatClient("localhost", "3455", nickname);
 
     // loops until all async handlers have ben dispatched
-    ut::asio::io().run();
+    sIo.run();
 }

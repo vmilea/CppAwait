@@ -31,9 +31,10 @@
 using namespace loo::lthread;
 using namespace loo::lchrono;
 
+
 // run loop
-//
 static boost::asio::io_service sIo;
+
 
 static ut::Awaitable asyncCountdown()
 {
