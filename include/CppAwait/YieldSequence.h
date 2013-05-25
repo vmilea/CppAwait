@@ -27,8 +27,7 @@
 #include "Coro.h"
 #include "impl/Assert.h"
 #include <iterator>
-
-#define YS_DONE ((void *) -1)
+#include <memory>
 
 namespace ut {
 
@@ -48,38 +47,41 @@ public:
      * @param func   Generator. May yield pointers to T or an exception.
      */
     YieldSequence(Coro::Func func)
-        : mCoro("YieldSequence")
-        , mCurrentValue(nullptr)
+        : m(new Impl(std::move(func), Coro("YieldSequence")))
     {
-        mCoro.init([=](void *startValue) {
-            func(startValue);
-            mCurrentValue = YS_DONE;
+        Impl *impl = m.get();
+
+        m->coro.init([impl](void *startValue) {
+            impl->func(startValue);
         });
     }
 
     ~YieldSequence()
     {
-        if (mCurrentValue != YS_DONE) {
-            ut_assert_(mCoro.isRunning());
-            forceUnwind(&mCoro);
+        // TODO: consider invalidating iterators
+
+        if (m && m->coro.isRunning()) {
+            forceUnwind(&m->coro);
         }
     }
 
     /** Move constructor */
     YieldSequence(YieldSequence&& other)
-        : mCoro(std::move(other.mCoro))
-        , mCurrentValue(other.mCurrentValue)
+        : m(std::move(other.m))
     {
-        other.mCurrentValue = YS_DONE;
     }
 
     /** Move assignment */
     YieldSequence& operator=(YieldSequence&& other)
     {
         if (this != &other) {
-            mCoro = std::move(other.mCoro);
-            mCurrentValue = other.mCurrentValue;
-            other.mCurrentValue = YS_DONE;
+            // TODO: consider invalidating iterators
+
+            if (m && m->coro.isRunning()) {
+                forceUnwind(&m->coro);
+            }
+
+            m = std::move(other.m);
         }
 
         return *this;
@@ -92,9 +94,10 @@ public:
      */
     iterator begin()
     {
-        ut_assert_(mCurrentValue != YS_DONE);
+        ut_assert_(m->currentValue == nullptr && "may not begin again");
+        ut_assert_(m->coro.isRunning() && "may not begin again");
 
-        Iterator it(this);
+        Iterator it(m.get());
         return ++it;
     }
 
@@ -121,32 +124,30 @@ public:
 
         T& operator*()
         {
-            ut_assert_(mContainer != nullptr);
-            ut_assert_(mContainer->mCurrentValue != nullptr);
-            ut_assert_(mContainer->mCurrentValue != YS_DONE);
+            ut_assert_(mContainer != nullptr && "may not dereference end");
+            ut_assert_(mContainer->currentValue != nullptr);
+            ut_assert_(mContainer->coro.isRunning());
 
-            return *((T *) mContainer->mCurrentValue);
+            return *((T *) mContainer->currentValue);
         }
 
         Iterator& operator++()
         {
-            ut_assert_(mContainer != nullptr);
-            ut_assert_(mContainer->mCurrentValue != YS_DONE);
+            ut_assert_(mContainer != nullptr && "may not increment past end");
 
             try {
-                void *value = yieldTo(&mContainer->mCoro);
+                mContainer->currentValue = yieldTo(&mContainer->coro);
 
-                if (mContainer->mCurrentValue == YS_DONE) { // coroutine has finished
+                if (mContainer->currentValue == nullptr) {
+                    // coroutine has finished
+                    ut_assert_(!mContainer->coro.isRunning() && "may not yield nullptr from coroutine");
                     mContainer = nullptr;
-                } else { // coroutine has yielded
-                    ut_assert_(value != nullptr && "you may not yield nullptr from coroutine");
-                    mContainer->mCurrentValue = value;
                 }
             } catch (const ForcedUnwind&) { // coroutine interrupted, swallow exception
-                mContainer->mCurrentValue = YS_DONE;
+                mContainer->currentValue = nullptr;
                 mContainer = nullptr;
             } catch (...) { // propagate other exceptions thrown by coroutine
-                mContainer->mCurrentValue = YS_DONE;
+                mContainer->currentValue = nullptr;
                 mContainer = nullptr;
                 throw;
             }
@@ -165,10 +166,12 @@ public:
         }
 
     private:
-        Iterator(YieldSequence<T> *container)
+        Iterator(typename YieldSequence<T>::Impl *container)
             : mContainer(container) { }
 
-        YieldSequence *mContainer;
+        Iterator& operator++(int); // disable postfix increment
+
+        typename YieldSequence<T>::Impl *mContainer;
 
         friend class YieldSequence<T>;
     };
@@ -177,8 +180,21 @@ private:
     YieldSequence(const YieldSequence<T>& other); // noncopyable
     YieldSequence<T>& operator=(const YieldSequence<T>& other); // noncopyable
 
-    Coro mCoro;
-    void *mCurrentValue;
+    struct Impl
+    {
+        Coro::Func func;
+        Coro coro;
+        void *currentValue;
+
+        Impl(Coro::Func&& func, Coro&& coro)
+            : func(std::move(func))
+            , coro(std::move(coro))
+            , currentValue(nullptr)
+        {
+        }
+    };
+
+    std::unique_ptr<Impl> m;
 };
 
 }
