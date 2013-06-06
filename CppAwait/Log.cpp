@@ -16,6 +16,7 @@
 
 #include "ConfigPrivate.h"
 #include <CppAwait/Log.h>
+#include <CppAwait/impl/Assert.h>
 #include <CppAwait/impl/StringUtil.h>
 #include <cstring>
 #include <cstdio>
@@ -26,28 +27,17 @@ static const char* PREFIXES[] = { "", "[UT-WARN] ", "[UT-INFO] ", "[UT-DEBG] ", 
 
 static const int PREFIX_LEN = 10;
 
-static LogLevel sLogLevel = LOGLEVEL_WARN;
-
 static const int LOG_BUF_SIZE = 1024;
 
 static char sBuffer[LOG_BUF_SIZE];
 
 
-void setLogLevel(LogLevel logLevel)
-{
-    sLogLevel = logLevel;
-}
+LogLevel gLogLevel = LOGLEVEL_WARN;
 
-LogLevel logLevel()
-{
-    return sLogLevel;
-}
 
 void implLog(LogLevel logLevel, const char *format, ...)
 {
-    if (logLevel > sLogLevel) {
-        return;
-    }
+    ut_assert_(logLevel <= gLogLevel);
 
     va_list ap;
     va_start(ap, format);

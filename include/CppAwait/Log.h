@@ -30,27 +30,43 @@ enum LogLevel
     LOGLEVEL_VERBOSE
 };
 
-void setLogLevel(LogLevel logLevel);
-LogLevel logLevel();
+extern LogLevel gLogLevel;
+
+inline void setLogLevel(LogLevel logLevel)
+{
+    gLogLevel = logLevel;
+}
+
+inline LogLevel logLevel()
+{
+    return gLogLevel;
+}
 
 void implLog(LogLevel logLevel, const char *format, ...);
 
 }
 
-#ifndef UT_LOG_WHERE_FORMAT
-# define UT_LOG_WHERE_FORMAT "(%s - %d) "
-#endif
+#ifdef UT_DISABLE_LOGGING
 
-#ifndef UT_LOG_WHERE_ARGS
-# define UT_LOG_WHERE_ARGS __FUNCTION__, __LINE__
-#endif
+#define ut_log_warn_(    _format, ...)
+#define ut_log_info_(    _format, ...)
+#define ut_log_debug_(   _format, ...)
+#define ut_log_verbose_( _format, ...)
 
-// #define ut_log_error_(_format, ...) ut::implLog(ut::LOGLEVEL_ERROR, UT_LOG_WHERE_FORMAT _format, UT_LOG_WHERE_ARGS, __VA_ARGS__)
+#else  // not UT_DISABLE_LOGGING
 
-#define ut_log_warn_(_format, ...) ut::implLog(ut::LOGLEVEL_WARN, _format, ##__VA_ARGS__)
+// lazy argument evaluation
+//
+#define ut_impl_log_(_level, _format, ...) \
+    ut_multi_line_macro_begin_ \
+    if (_level <= ut::gLogLevel) { \
+        ut::implLog(_level, _format, ##__VA_ARGS__); \
+    } \
+    ut_multi_line_macro_end_
 
-#define ut_log_info_(_format, ...) ut::implLog(ut::LOGLEVEL_INFO, _format, ##__VA_ARGS__)
+#define ut_log_warn_(    _format, ...) ut_impl_log_(ut::LOGLEVEL_WARN,    _format, ##__VA_ARGS__)
+#define ut_log_info_(    _format, ...) ut_impl_log_(ut::LOGLEVEL_INFO,    _format, ##__VA_ARGS__)
+#define ut_log_debug_(   _format, ...) ut_impl_log_(ut::LOGLEVEL_DEBUG,   _format, ##__VA_ARGS__)
+#define ut_log_verbose_( _format, ...) ut_impl_log_(ut::LOGLEVEL_VERBOSE, _format, ##__VA_ARGS__)
 
-#define ut_log_debug_(_format, ...) ut::implLog(ut::LOGLEVEL_DEBUG, _format, ##__VA_ARGS__)
-
-#define ut_log_verbose_(_format, ...) ut::implLog(ut::LOGLEVEL_VERBOSE, _format, ##__VA_ARGS__)
+#endif // UT_DISABLE_LOGGING
