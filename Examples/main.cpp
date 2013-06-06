@@ -51,7 +51,7 @@ const std::array<std::pair<ExampleFunc, std::string>, 11> EXAMPLES =
 
 int main(int argc, char** argv)
 {
-    ut::setLogLevel(ut::LOGLEVEL_DEBUG);
+    // ut::setLogLevel(ut::LOGLEVEL_DEBUG);
 
     size_t selected = 0;
 
