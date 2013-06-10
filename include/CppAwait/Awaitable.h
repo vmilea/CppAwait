@@ -242,6 +242,12 @@ public:
      */
     void setAwaitingCoro(Coro *coro);
 
+    /** Returns a completed awaitable. This is more efficient than taking and immediately calling completer. */
+    static Awaitable makeCompleted();
+
+    /** Returns a failed awaitable. This is more efficient than taking and immediately calling completer. */
+    static Awaitable makeFailed(std::exception_ptr eptr);
+
 private:
     Awaitable(const Awaitable&); // noncopyable
     Awaitable& operator=(const Awaitable&); // noncopyable

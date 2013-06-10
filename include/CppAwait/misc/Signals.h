@@ -126,6 +126,7 @@ protected:
     template <typename F>
     void emit(F&& caller)
     {
+        ut_assert_(!mIsEmitting && "may not emit signal from a slot");
         ut_assert_(mNumCanceled == 0);
         ut_assert_(mHooksToAdd.empty());
 

@@ -185,7 +185,6 @@ void Awaitable::complete()
 {
     ut_assert_(!didComplete());
     ut_assert_(!didFail());
-    ut_assert_(!isNil());
 
     m->didComplete = true;
     m->completerGuard = nullptr;
@@ -228,14 +227,15 @@ void Awaitable::clear()
         return; // moved
     }
 
-    const char *reason = (std::uncaught_exception() ? "due to uncaught exception " : "");
-
     if (didComplete() || didFail()) {
-        ut_log_debug_("* destroy awt '%s' %s(%s)", tag(), reason, (didComplete() ? "completed" : "failed"));
+        ut_log_debug_("* destroy awt '%s' %s(%s)", tag(),
+            (std::uncaught_exception() ? "due to uncaught exception " : ""),
+            (didComplete() ? "completed" : "failed"));
 
         ut_assert_(m->awaitingCoro == nullptr);
     } else {
-        ut_log_debug_("* destroy awt '%s' %s(interrupted)", tag(), reason);
+        ut_log_debug_("* destroy awt '%s' %s(interrupted)", tag(),
+            (std::uncaught_exception() ? "due to uncaught exception " : ""));
 
         if (m->awaitingCoro != nullptr) {
             // can't print awaiting coroutine tag since it may have been deleted
@@ -274,6 +274,19 @@ void Awaitable::clear()
     m.reset();
 }
 
+Awaitable Awaitable::makeCompleted()
+{
+    Awaitable awt;
+    awt.complete();
+    return std::move(awt);
+}
+
+Awaitable Awaitable::makeFailed(std::exception_ptr eptr)
+{
+    Awaitable awt;
+    awt.fail(std::move(eptr));
+    return std::move(awt);
+}
 
 Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize)
 {
@@ -324,7 +337,7 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
         }
 
         if (is(eptr)) {
-            m->shell->fail(eptr); // mAwaitingCoro is null, won't yield
+            m->shell->fail(std::move(eptr)); // mAwaitingCoro is null, won't yield
         } else {
             m->shell->complete(); // mAwaitingCoro is null, won't yield
         }
