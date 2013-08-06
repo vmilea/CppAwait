@@ -8,7 +8,9 @@ source_group ("Sources\\Looper" FILES ${_src_looper_cxx} ${_src_looper_h})
 
 set (_src_all_cxx ${_src_cxx} ${_src_looper_cxx})
 
-add_precompiled_header (stdafx.h _src_all_cxx)
+if (NOT MINGW)
+    add_precompiled_header (stdafx.h _src_all_cxx)
+endif()
 
 add_executable (examples ${_src_all_cxx} ${_src_h} ${_src_looper_h})
 

@@ -20,14 +20,14 @@ set (Boost_USE_STATIC_LIBS ON)
 
 if (MSVC10 OR MINGW)
     # MSVC10 & regular MINGW don't provide chrono & thread, fallback to Boost
-    set (_boost_deps context system chrono thread)
+    set (_boost_deps context coroutine system chrono thread)
 
     # mingw-gcc fails to link boost::thread
     if (WIN32 AND CMAKE_COMPILER_IS_GNUCXX)
         add_definitions (-DBOOST_THREAD_USE_LIB)
     endif()
 else()
-    set (_boost_deps context system)
+    set (_boost_deps context coroutine system)
 endif()
 
 message ("Boost dependencies: ${_boost_deps}")

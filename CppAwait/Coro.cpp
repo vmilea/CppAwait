@@ -24,12 +24,8 @@
 #include <algorithm>
 #include <boost/version.hpp>
 #include <boost/context/all.hpp>
-
-// guarded stack allocator has moved to boost/coroutine since Boost 1.53
-//
-#if BOOST_VERSION > 105200
 #include <boost/coroutine/stack_allocator.hpp>
-#endif
+#include <boost/coroutine/stack_context.hpp>
 
 namespace ut {
 
@@ -139,44 +135,42 @@ class StackPool
 public:
     StackPool() { }
 
-    std::pair<void*, size_t> obtain(size_t minStackSize)
+    boost::coroutines::stack_context obtain(size_t minStackSize)
     {
         // take smallest stack that fits requirement. create one if no match.
 
-        void *stackPtr;
-        size_t stackSize;
+        boost::coroutines::stack_context stack;
 
         StackMap::iterator pos = mStacks.lower_bound(minStackSize);
 
         if (pos == mStacks.end()) {
-            stackSize = Coro::minimumStackSize();
+            size_t stackSize = Coro::minimumStackSize();
             if (stackSize < minStackSize) {
                 stackSize = minStackSize;
             }
 
-            stackPtr = mAllocator.allocate(stackSize);
+            mAllocator.allocate(stack, stackSize);
         } else {
-            stackSize = pos->first;
-            stackPtr = pos->second;
+            stack = pos->second;
             mStacks.erase(pos);
         }
 
-        ut_log_verbose_("obtained stack %p of size %ld", stackPtr, (long) stackSize);
+        ut_log_verbose_("obtained stack %p of size %ld", stack.sp, (long) stack.size);
 
-        return std::make_pair(stackPtr, stackSize);
+        return stack;
     }
 
-    void recycle(void *stackPtr, size_t stackSize)
+    void recycle(boost::coroutines::stack_context stack)
     {
-        ut_log_verbose_("recycled stack %p of size %ld", stackPtr, (long) stackSize);
+        ut_log_verbose_("recycled stack %p of size %ld", stack.sp, (long) stack.size);
 
-        mStacks.insert(std::make_pair(stackSize, stackPtr));
+        mStacks.insert(std::make_pair(stack.size, stack));
     }
 
     void drain()
     {
         ut_foreach_(auto& pair, mStacks) {
-            mAllocator.deallocate(pair.second, pair.first);
+            mAllocator.deallocate(pair.second);
         }
         mStacks.clear();
     }
@@ -197,7 +191,7 @@ public:
     }
 
 private:
-    typedef std::multimap<size_t, void*> StackMap;
+    typedef std::multimap<size_t, boost::coroutines::stack_context> StackMap;
 
 #if BOOST_VERSION == 105200
     typedef ctx::guarded_stack_allocator Allocator;
@@ -250,14 +244,14 @@ void Coro::drainStackPool()
 struct Coro::Impl
 {
     std::string tag;
-    std::pair<void *, size_t> stack;
+    boost::coroutines::stack_context stack;
     ctx::fcontext_t *fc;
     Coro *parent;
     Coro::Func func;
     bool isRunning;
     bool isFullyUnwinded;
 
-    Impl(std::string&& tag, const std::pair<void *, size_t>& stack)
+    Impl(std::string&& tag, boost::coroutines::stack_context stack)
         : tag(std::move(tag))
         , stack(stack)
         , fc(nullptr)
@@ -285,7 +279,7 @@ Coro::Coro(std::string tag, size_t stackSize)
 }
 
 Coro::Coro()
-    : m(new Impl(std::string("main"), std::pair<void *, size_t>(nullptr, 0)))
+    : m(new Impl(std::string("main"), boost::coroutines::stack_context()))
 {
     ut_log_verbose_("- new coroutine '%s'", m->tag.c_str());
 
@@ -307,7 +301,7 @@ Coro::~Coro()
                 currentCoro()->yieldTo(this);
             }
 
-            sPool.recycle(m->stack.first, m->stack.second);
+            sPool.recycle(m->stack);
         } else {
             delete m->fc;
         }
@@ -345,7 +339,7 @@ void Coro::init(Func func)
 
     m->parent = currentCoro();
     m->func = std::move(func);
-    m->fc = ctx::make_fcontext(m->stack.first, m->stack.second, &Coro::fcontextFunc);
+    m->fc = ctx::make_fcontext(m->stack.sp, m->stack.size, &Coro::fcontextFunc);
 
     m->isRunning = true;
     m->isFullyUnwinded = false;
