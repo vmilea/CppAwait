@@ -28,6 +28,7 @@
 #include "../impl/Foreach.h"
 #include <vector>
 #include <memory>
+#include <algorithm>
 #include <functional>
 
 namespace ut {
@@ -124,7 +125,7 @@ protected:
     }
 
     template <typename F>
-    void emit(F&& caller)
+    void emitSignal(F&& caller)
     {
         ut_assert_(!mIsEmitting && "may not emit signal from a slot");
         ut_assert_(mNumCanceled == 0);
@@ -205,7 +206,7 @@ public:
     {
         typedef Signal0::slot_type slot_type;
 
-        this->emit([](const slot_type& slot) {
+        this->emitSignal([](const slot_type& slot) {
             slot();
         });
     }
@@ -226,7 +227,7 @@ public:
     {
         typedef typename Signal1<Arg1>::slot_type slot_type;
 
-        this->emit([&](const slot_type& slot) {
+        this->emitSignal([&](const slot_type& slot) {
             slot(arg1);
         });
     }
@@ -247,7 +248,7 @@ public:
     {
         typedef typename Signal2<Arg1, Arg2>::slot_type slot_type;
 
-        this->emit([&](const slot_type& slot) {
+        this->emitSignal([&](const slot_type& slot) {
             slot(arg1, arg2);
         });
     }
@@ -268,7 +269,7 @@ public:
     {
         typedef typename Signal3<Arg1, Arg2, Arg3>::slot_type slot_type;
 
-        this->emit([&](const slot_type& slot) {
+        this->emitSignal([&](const slot_type& slot) {
             slot(arg1, arg2, arg3);
         });
     }
@@ -289,7 +290,7 @@ public:
     {
         typedef typename Signal4<Arg1, Arg2, Arg3, Arg4>::slot_type slot_type;
 
-        this->emit([&](const slot_type& slot) {
+        this->emitSignal([&](const slot_type& slot) {
             slot(arg1, arg2, arg3, arg4);
         });
     }
@@ -310,7 +311,7 @@ public:
     {
         typedef typename Signal5<Arg1, Arg2, Arg3, Arg4, Arg5>::slot_type slot_type;
 
-        this->emit([&](const slot_type& slot) {
+        this->emitSignal([&](const slot_type& slot) {
             slot(arg1, arg2, arg3, arg4, arg5);
         });
     }

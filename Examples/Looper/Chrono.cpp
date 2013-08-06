@@ -14,6 +14,7 @@
 * limitations under the License.
 */
 
+#include "../ExUtil.h"
 #include "Chrono.h"
 
 namespace loo {

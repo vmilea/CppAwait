@@ -20,7 +20,7 @@
 //        see ex_awaitChatServer.cpp.
 //
 
-#include <cstdio>
+#include "ExUtil.h"
 #include <string>
 #include <map>
 #include <iostream>

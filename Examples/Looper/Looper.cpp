@@ -14,10 +14,9 @@
 * limitations under the License.
 */
 
+#include "../ExUtil.h"
 #include "Looper.h"
 #include <cassert>
-
-using namespace ut;
 
 namespace loo {
 

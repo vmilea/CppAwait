@@ -72,7 +72,7 @@ Awaitable asyncDelay(boost::asio::io_service& io, const DurationType& delay)
         return eptr(ec);
     }));
 
-    awt.connectToDone([timer](Awaitable *awt) {
+    awt.connectToDone([timer](Awaitable *) {
         delete timer;
     });
 
@@ -113,15 +113,32 @@ inline Awaitable asyncConnect(Socket& socket, const typename Socket::endpoint_ty
 template <typename Socket, typename Iterator>
 inline Awaitable asyncConnect(Socket& socket, Iterator begin, Iterator& outConnected)
 {
-    ut::Awaitable awt("asyncConnect");
+    return ut::startAsync("asyncConnect", [&socket, begin, &outConnected]() {
+        boost::system::error_code ec;
 
-    boost::asio::async_connect(socket, begin,
-                               awt.wrap([&](const boost::system::error_code& ec, Iterator iterator) -> std::exception_ptr {
-        outConnected = iterator;
-        return eptr(ec);
-    }));
+        for (Iterator it = begin, end = Iterator(); it != end; ++it) {
+            socket.close(ec);
+            if (!!ec) {
+                break;
+            }
 
-    return std::move(awt);
+            ut::Awaitable awt = asyncConnect(socket, *it);
+            try {
+                awt.await();
+
+                outConnected = it;
+                return;
+            } catch (const boost::system::system_error& e) {
+                ec = e.code();
+                // try next
+            }
+        }
+
+        if (!ec) {
+            ec = boost::asio::error::not_found;
+        }
+        throw boost::system::system_error(ec);
+    });
 }
 
 
@@ -215,17 +232,24 @@ inline Awaitable asyncRead(AsyncReadStream& stream, const MutableBufferSequence&
     return std::move(awt);
 }
 
-template <typename AsyncReadStream, typename MutableBufferSequence>
-inline Awaitable asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffer, OpaqueSharedPtr masterBuffer)
+template <typename AsyncReadStream, typename MutableBufferSequence, typename CompletionCondition>
+inline Awaitable asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffers, OpaqueSharedPtr masterBuffer, CompletionCondition completionCondition)
 {
     static size_t bytesTransferred;
-    return asyncRead(stream, outBuffer, std::move(masterBuffer), boost::asio::transfer_all(), bytesTransferred);
+    return asyncRead(stream, outBuffers, std::move(masterBuffer), completionCondition, bytesTransferred);
+}
+
+template <typename AsyncReadStream, typename MutableBufferSequence>
+inline Awaitable asyncRead(AsyncReadStream& stream, const MutableBufferSequence& outBuffers, OpaqueSharedPtr masterBuffer)
+{
+    static size_t bytesTransferred;
+    return asyncRead(stream, outBuffers, std::move(masterBuffer), boost::asio::transfer_all(), bytesTransferred);
 }
 
 template <typename AsyncReadStream, typename Buffer>
-inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<Buffer> buffer)
+inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<Buffer> outBuffer)
 {
-    return asyncRead(stream, boost::asio::buffer(*buffer), OpaqueSharedPtr(buffer));
+    return asyncRead(stream, boost::asio::buffer(*outBuffer), OpaqueSharedPtr(outBuffer));
 }
 
 template <typename AsyncReadStream, typename Allocator, typename CompletionCondition>
@@ -240,6 +264,13 @@ inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio:
     }));
 
     return std::move(awt);
+}
+
+template <typename AsyncReadStream, typename Allocator, typename CompletionCondition>
+inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio::basic_streambuf<Allocator> > outBuffer, CompletionCondition completionCondition)
+{
+    static size_t bytesTransferred;
+    return asyncRead(stream, std::move(outBuffer), completionCondition, bytesTransferred);
 }
 
 template <typename AsyncReadStream, typename Allocator>

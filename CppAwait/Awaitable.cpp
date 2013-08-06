@@ -54,6 +54,8 @@ struct AwaitableImpl
 Awaitable::Awaitable(std::string tag)
     : m(new AwaitableImpl(std::move(tag)))
 {
+    currentCoro(); // ensure library is initialized
+
     m->shell = this;
 }
 
