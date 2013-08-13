@@ -16,10 +16,12 @@
 
 #include "ConfigPrivate.h"
 #include <CppAwait/Awaitable.h>
+#include <CppAwait/impl/SharedFlag.h>
 #include <CppAwait/Log.h>
 #include <CppAwait/impl/StringUtil.h>
 #include <cstdio>
 #include <cstdarg>
+#include <boost/pool/singleton_pool.hpp>
 
 namespace ut {
 
@@ -51,12 +53,20 @@ struct AwaitableImpl
     }
 };
 
+typedef boost::singleton_pool<
+    AwaitableImpl, sizeof(AwaitableImpl),
+    boost::default_user_allocator_new_delete,
+    boost::details::pool::null_mutex> AwtImplPool;
+
 Awaitable::Awaitable(std::string tag)
-    : m(new AwaitableImpl(std::move(tag)))
 {
     currentCoro(); // ensure library is initialized
 
-    m->shell = this;
+    auto impl = (AwaitableImpl *) AwtImplPool::malloc();
+    new (impl) AwaitableImpl(std::move(tag));
+    impl->shell = this;
+
+    m.reset(impl);
 }
 
 Awaitable::~Awaitable()
@@ -146,7 +156,7 @@ Completer Awaitable::takeCompleter()
 
     ut_assert_(isNil() && "completer already taken");
 
-    m->completerGuard = std::make_shared<char>();
+    m->completerGuard = allocateSharedFlag();
 
     return Completer(m.get(), m->completerGuard);
 }
@@ -282,7 +292,9 @@ void Awaitable::clear()
         m->userDataDeleter();
     }
 
-    m.reset();
+    AwaitableImpl *impl = m.release();
+    impl->~AwaitableImpl();
+    AwtImplPool::free(impl);
 }
 
 Awaitable Awaitable::makeCompleted()
@@ -306,7 +318,7 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
     Awaitable awt(tag);
 
     // coroutine owns completer
-    awt.m->completerGuard = std::make_shared<char>();
+    awt.m->completerGuard = allocateSharedFlag();
 
     auto coro = new Coro(std::move(tag), [func](void *awtImpl) {
         auto m = (AwaitableImpl *) awtImpl;

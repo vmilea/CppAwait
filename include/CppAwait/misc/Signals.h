@@ -24,6 +24,7 @@
 #pragma once
 
 #include "../Config.h"
+#include "../impl/SharedFlag.h"
 #include "../impl/Assert.h"
 #include "../impl/Foreach.h"
 #include <vector>
@@ -110,7 +111,7 @@ public:
      */
     SignalConnection connect(slot_type slot)
     {
-        auto disconnectFlag = std::make_shared<signal_type *>(this);
+        auto disconnectFlag = allocateSharedFlag(this);
 
         if (mIsEmitting) {
             mHooksToAdd.push_back(Hook(std::move(slot), disconnectFlag));
@@ -119,7 +120,7 @@ public:
         }
 
         return SignalConnection([disconnectFlag]() {
-            signal_type *thiz = *disconnectFlag;
+            auto thiz = (signal_type *) *disconnectFlag;
 
             if (thiz) {
                 *disconnectFlag = nullptr;
@@ -153,15 +154,18 @@ public:
      */
     void disconnectAll()
     {
-        ut_foreach_(auto& hook, mHooksToAdd) {
-            hook.cancel();
-        }
-        ut_foreach_(auto& hook, mHooks) {
-            hook.cancel();
-        }
         mNumCanceled = mHooksToAdd.size() + mHooks.size();
 
-        trimCanceled();
+        if (mNumCanceled > 0) {
+            ut_foreach_(auto& hook, mHooksToAdd) {
+                hook.cancel();
+            }
+            ut_foreach_(auto& hook, mHooks) {
+                hook.cancel();
+            }
+
+            trimCanceled();
+        }
     }
 
 protected:
@@ -259,7 +263,7 @@ private:
 
     struct Hook
     {
-        Hook(slot_type&& slot, const std::shared_ptr<signal_type *>& disconnectFlag)
+        Hook(slot_type&& slot, const std::shared_ptr<void *>& disconnectFlag)
             : mSlot(std::move(slot))
             , mDisconnectFlag(disconnectFlag)
             , mIsCanceled(false) { }
@@ -316,7 +320,7 @@ private:
         Hook& operator=(const Hook& other); // noncopyable
 
         slot_type mSlot;
-        mutable std::shared_ptr<signal_type *> mDisconnectFlag;
+        mutable std::shared_ptr<void *> mDisconnectFlag;
         mutable bool mIsCanceled;
     };
 
