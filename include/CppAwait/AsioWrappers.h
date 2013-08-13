@@ -72,7 +72,7 @@ Awaitable asyncDelay(boost::asio::io_service& io, const DurationType& delay)
         return eptr(ec);
     }));
 
-    awt.connectToDone([timer](Awaitable *) {
+    awt.connectToDoneLite([timer](Awaitable *) {
         delete timer;
     });
 
@@ -113,7 +113,7 @@ inline Awaitable asyncConnect(Socket& socket, const typename Socket::endpoint_ty
 template <typename Socket, typename Iterator>
 inline Awaitable asyncConnect(Socket& socket, Iterator begin, Iterator& outConnected)
 {
-    return ut::startAsync("asyncConnect", [&socket, begin, &outConnected]() {
+    return ut::startAsync("asyncConnect-iterator", [&socket, begin, &outConnected]() {
         boost::system::error_code ec;
 
         for (Iterator it = begin, end = Iterator(); it != end; ++it) {

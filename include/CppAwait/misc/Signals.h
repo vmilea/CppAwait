@@ -37,6 +37,21 @@ namespace ut {
 class SignalConnection
 {
 public:
+    /** Construct a dummy connection */
+    SignalConnection() { }
+
+    /** Move constructor */
+    SignalConnection(SignalConnection&& other)
+        : mDisconnect(std::move(other.mDisconnect)) { }
+
+    /** Move assignment */
+    SignalConnection& operator=(SignalConnection&& other)
+    {
+        mDisconnect = std::move(other.mDisconnect);
+
+        return *this;
+    }
+
     /**
      * Disconnect associated slot
      *
@@ -44,7 +59,10 @@ public:
      */
     void disconnect()
     {
-        mDisconnect();
+        if (mDisconnect) {
+            mDisconnect();
+            mDisconnect = nullptr;
+        }
     }
 
 private:
@@ -65,6 +83,9 @@ public:
     /** Slot signature */
     typedef std::function<Signature> slot_type;
 
+    /** Signal alias */
+    typedef Signal<Signature> signal_type;
+
     /**
      * Connect a slot
      *
@@ -75,24 +96,40 @@ public:
      */
     SignalConnection connect(slot_type slot)
     {
-        Hook hook(std::move(slot));
-
-        std::shared_ptr<bool> isCanceled = hook.isCanceled;
+        auto disconnectFlag = std::make_shared<signal_type *>(this);
 
         if (mIsEmitting) {
-            mHooksToAdd.push_back(std::move(hook));
+            mHooksToAdd.push_back(Hook(std::move(slot), disconnectFlag));
         } else {
-            mHooks.push_back(std::move(hook));
+            mHooks.push_back(Hook(std::move(slot), disconnectFlag));
         }
 
-        return SignalConnection([isCanceled, this] {
-            if (!*isCanceled) {
-                *isCanceled = true;
-                this->mNumCanceled++;
+        return SignalConnection([disconnectFlag]() {
+            signal_type *thiz = *disconnectFlag;
 
-                this->trimCanceled();
+            if (thiz) {
+                *disconnectFlag = nullptr;
+
+                thiz->mNumCanceled++;
+                thiz->trimCanceled();
             }
         });
+    }
+
+    /**
+     * Connect a slot
+     *
+     * This version is slightly faster, but the slot can't be disconnected.
+     *
+     * @param   slot     slot to connect
+     */
+    void connectLite(slot_type slot)
+    {
+        if (mIsEmitting) {
+            mHooksToAdd.push_back(Hook(std::move(slot)));
+        } else {
+            mHooks.push_back(Hook(std::move(slot)));
+        }
     }
 
     /**
@@ -103,10 +140,10 @@ public:
     void disconnectAll()
     {
         ut_foreach_(auto& hook, mHooksToAdd) {
-            *hook.isCanceled = true;
+            hook.cancel();
         }
         ut_foreach_(auto& hook, mHooks) {
-            *hook.isCanceled = true;
+            hook.cancel();
         }
         mNumCanceled = mHooksToAdd.size() + mHooks.size();
 
@@ -117,11 +154,18 @@ protected:
     /** Abstract class */
     Signal()
         : mNumCanceled(0)
-        , mIsEmitting(false) { }
+        , mIsEmitting(nullptr)
+    {
+    }
 
     ~Signal()
     {
         disconnectAll();
+
+        if (mIsEmitting) {
+            // break out of emit loop
+            *mIsEmitting = false;
+        }
     }
 
     template <typename F>
@@ -131,33 +175,40 @@ protected:
         ut_assert_(mNumCanceled == 0);
         ut_assert_(mHooksToAdd.empty());
 
-        mIsEmitting = true;
+        bool isEmitting = true;
+        mIsEmitting = &isEmitting;
 
-        try {
-            size_t n = mHooks.size();
+        size_t n = mHooks.size();
 
-            for (size_t i = 0; i < n; i++) {
-                const Hook& hook = mHooks[i];
+        for (size_t i = 0; i < n; i++) {
+            const Hook& hook = mHooks[i];
 
-                if (mNumCanceled == 0 || !*hook.isCanceled) {
-                    caller(hook.slot);
+            if (mNumCanceled == 0 || !hook.isCanceled()) {
+                try {
+                    caller(hook.slot());
+
+                    if (!isEmitting) {
+                        return;
+                    }
+                } catch (...) {
+                    if (isEmitting) {
+                        mIsEmitting = nullptr;
+                        trimCanceled();
+                    }
+                    throw;
                 }
             }
-            ut_assert_(n == mHooks.size());
+        }
+        ut_assert_(n == mHooks.size());
 
-            if (!mHooksToAdd.empty()) {
-                ut_foreach_(auto& hook, mHooksToAdd) {
-                    mHooks.push_back(std::move(hook));
-                }
-                mHooksToAdd.clear();
+        if (!mHooksToAdd.empty()) {
+            ut_foreach_(auto& hook, mHooksToAdd) {
+                mHooks.push_back(std::move(hook));
             }
-        } catch (...) {
-            mIsEmitting = false;
-            trimCanceled();
-            throw;
+            mHooksToAdd.clear();
         }
 
-        mIsEmitting = false;
+        mIsEmitting = nullptr;
         trimCanceled();
     }
 
@@ -171,29 +222,90 @@ private:
             return;
         }
 
-        auto pos = std::remove_if(mHooks.begin(), mHooks.end(),
-            [](const Hook& hook) {
-                return *hook.isCanceled;
-        });
-        ut_assert_((size_t) (mHooks.end() - pos) == mNumCanceled);
+        if (mNumCanceled == mHooks.size()) {
+#ifndef NDEBUG
+            ut_foreach_(auto& hook, mHooks) {
+                ut_assert_(hook.isCanceled());
+            }
+#endif
+            mHooks.clear();
+        } else {
+            auto pos = std::remove_if(mHooks.begin(), mHooks.end(),
+                [](const Hook& hook) {
+                    return hook.isCanceled();
+            });
 
-        mHooks.erase(pos, mHooks.end());
+            ut_assert_((size_t) (mHooks.end() - pos) == mNumCanceled);
+
+            mHooks.erase(pos, mHooks.end());
+        }
+
         mNumCanceled = 0;
     }
 
     struct Hook
     {
-        slot_type slot;
-        std::shared_ptr<bool> isCanceled;
+        Hook(slot_type&& slot, const std::shared_ptr<signal_type *>& disconnectFlag)
+            : mSlot(std::move(slot))
+            , mDisconnectFlag(disconnectFlag)
+            , mIsCanceled(false) { }
 
         Hook(slot_type&& slot)
-            : slot(std::move(slot))
-            , isCanceled(std::make_shared<bool>(false)) { }
+            : mSlot(std::move(slot))
+            , mIsCanceled(false) { }
+
+        Hook(Hook&& other)
+            : mSlot(std::move(other.mSlot))
+            , mDisconnectFlag(std::move(other.mDisconnectFlag))
+            , mIsCanceled(other.mIsCanceled)
+        {
+            other.mIsCanceled = true;
+        }
+
+        Hook& operator=(Hook&& other)
+        {
+            mSlot = std::move(other.mSlot);
+            mDisconnectFlag = std::move(other.mDisconnectFlag);
+            mIsCanceled = other.mIsCanceled;
+            other.mIsCanceled = true;
+
+            return *this;
+        }
+
+        const slot_type& slot() const
+        {
+            return mSlot;
+        }
+
+        bool isCanceled() const
+        {
+            if (mDisconnectFlag && *mDisconnectFlag == nullptr) {
+                mDisconnectFlag = nullptr;
+                mIsCanceled = true;
+            }
+
+            return mIsCanceled;
+        }
+
+        void cancel()
+        {
+            if (mDisconnectFlag) {
+                *mDisconnectFlag = nullptr;
+                mDisconnectFlag = nullptr;
+            }
+
+            mIsCanceled = true;
+        }
+
+    private:
+        slot_type mSlot;
+        mutable std::shared_ptr<signal_type *> mDisconnectFlag;
+        mutable bool mIsCanceled;
     };
 
     std::vector<Hook> mHooksToAdd, mHooks;
     size_t mNumCanceled;
-    bool mIsEmitting;
+    bool *mIsEmitting;
 };
 
 /** Signal with 0 arguments */

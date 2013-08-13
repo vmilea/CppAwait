@@ -65,6 +65,13 @@ void initCoroLib()
                 ut::make_exception_ptr(YieldForbidden()));
 }
 
+Coro* mainCoro()
+{
+    assert (sCurrentCoro != nullptr);
+
+    return sMasterCoroChain.front();
+}
+
 Coro* currentCoro()
 {
     if (sCurrentCoro == nullptr) {
@@ -315,9 +322,7 @@ Coro::Coro(Coro&& other)
 
 Coro& Coro::operator=(Coro&& other)
 {
-    if (this != &other) {
-        m = std::move(other.m);
-    }
+    m = std::move(other.m);
 
     return *this;
 }

@@ -53,6 +53,20 @@ public:
     Completer()
         : mAwtImpl(nullptr) { }
 
+    /** Move constructor */
+    Completer(Completer&& other)
+        : mAwtImpl(other.mAwtImpl)
+        , mGuard(std::move(other.mGuard)) { }
+
+    /** Move assignment */
+    Completer& operator=(Completer&& other)
+    {
+        mAwtImpl = other.mAwtImpl;
+        mGuard = std::move(other.mGuard);
+
+        return *this;
+    }
+
     /** Calls complete() */
     void operator()() const
     {
@@ -198,6 +212,9 @@ public:
 
     /** Add a custom handler to be called when done */
     SignalConnection connectToDone(const OnDoneSignal::slot_type& slot);
+
+    /** Add a custom handler to be called when done. Faster, but slot can't be disconnected. */
+    void connectToDoneLite(const OnDoneSignal::slot_type& slot);
 
     /** Take the completer functor */
     Completer takeCompleter();
@@ -618,17 +635,9 @@ namespace detail
             : mCompleter(completer)
             , mCallback(std::move(callback)) { }
 
-        CallbackWrapper(const CallbackWrapper<F>& other)
-            : mCompleter(other.mCompleter)
-            , mCallback(other.mCallback) { }
-
-        CallbackWrapper<F>& operator=(const CallbackWrapper<F>& other)
-        {
-            mCompleter = other.mCompleter;
-            mCallback = other.mCallback;
-
-            return *this;
-        }
+        CallbackWrapper(Completer&& completer, F&& callback)
+            : mCompleter(std::move(completer))
+            , mCallback(std::move(callback)) { }
 
         CallbackWrapper(CallbackWrapper<F>&& other)
             : mCompleter(std::move(other.mCompleter))

@@ -16,6 +16,7 @@
 
 #include "ConfigPrivate.h"
 #include <CppAwait/misc/Scheduler.h>
+#include <CppAwait/impl/Assert.h>
 
 namespace ut {
 
@@ -71,11 +72,15 @@ void initScheduler(ScheduleFunc schedule)
 
 void schedule(Action action)
 {
+    ut_assert_(sSchedule != nullptr && "scheduler not initialized, call initScheduler()");
+
     sSchedule(std::move(action));
 }
 
 Ticket scheduleWithTicket(Action action)
 {
+    ut_assert_(sSchedule != nullptr && "scheduler not initialized, call initScheduler()");
+
     auto sharedAction = std::make_shared<Action>(std::move(action));
 
     sSchedule(WeakAction(sharedAction));

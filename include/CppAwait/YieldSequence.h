@@ -74,15 +74,13 @@ public:
     /** Move assignment */
     YieldSequence& operator=(YieldSequence&& other)
     {
-        if (this != &other) {
-            // TODO: consider invalidating iterators
+        // TODO: consider invalidating iterators
 
-            if (m && m->coro.isRunning()) {
-                forceUnwind(&m->coro);
-            }
-
-            m = std::move(other.m);
+        if (m && m->coro.isRunning()) {
+            forceUnwind(&m->coro);
         }
+
+        m = std::move(other.m);
 
         return *this;
     }

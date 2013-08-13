@@ -92,7 +92,7 @@ public:
 
         { ut::PushMasterCoro _;
             do {
-                Completer completer = mWaiters.front().completer;
+                Completer completer = std::move(mWaiters.front().completer);
                 mWaiters.pop_front();
 
                 if (!completer.isExpired()) {
@@ -121,7 +121,7 @@ public:
             ut_assert_(mWaiters.front().id <= maxId);
 
             do {
-                Completer completer = mWaiters.front().completer;
+                Completer completer = std::move(mWaiters.front().completer);
                 mWaiters.pop_front();
 
                 completer();
@@ -137,9 +137,23 @@ private:
         Id id;
         Completer completer;
 
-        Waiter(Id id, const Completer& completer)
+        Waiter(Id id, Completer&& completer)
             : id(id)
-            , completer(completer) { }
+            , completer(std::move(completer)) { }
+
+        Waiter(Waiter&& other)
+            : id(std::move(other.id))
+            , completer(std::move(other.completer))
+        {
+        }
+
+        Waiter& operator=(Waiter&& other)
+        {
+            id = other.id;
+            completer = std::move(other.completer);
+
+            return *this;
+        }
     };
 
     Condition(const Condition&); // noncopyable

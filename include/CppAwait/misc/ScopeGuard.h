@@ -37,12 +37,48 @@ public:
     typedef ScopeGuard<F> type;
 
     /**
+     * Create a dummy scope guard
+     */
+    explicit ScopeGuard()
+        : mIsDismissed(true) { }
+
+    /**
      * Create a scope guard
      * @param cleanup   functor to call at end of scope
      */
-    explicit ScopeGuard(F cleanup)
+    explicit ScopeGuard(const F& cleanup)
+        : mIsDismissed(false)
+        , mCleanup(cleanup) { }
+
+    /**
+     * Create a scope guard
+     * @param cleanup   functor to call at end of scope
+     */
+    explicit ScopeGuard(F&& cleanup)
         : mIsDismissed(false)
         , mCleanup(std::move(cleanup)) { }
+
+    /**
+     * Move constructor
+     */
+    ScopeGuard(ScopeGuard&& other)
+        : mIsDismissed(other.mIsDismissed)
+        , mCleanup(std::move(other.mCleanup))
+    {
+        other.mIsDismissed = true;
+    }
+
+    /**
+     * Move assignment
+     */
+    ScopeGuard& operator=(ScopeGuard&& other)
+    {
+        mIsDismissed = other.mIsDismissed;
+        other.mIsDismissed = true;
+        mCleanup = std::move(other.mCleanup);
+
+        return *this;
+    }
 
     /** Perform cleanup unless dismissed */
     ~ScopeGuard()
@@ -73,11 +109,9 @@ public:
 
     void touch() const  { /* avoids "variable unused" compiler warnings */ }
 
-    ScopeGuard(const type& other); // delete
-    type& operator=(const type& other); // delete
-
 private:
-    void* operator new(size_t size); // must allocate on stack
+    ScopeGuard(const ScopeGuard&); // noncopyable
+    ScopeGuard& operator=(const ScopeGuard&); // noncopyable
 
     mutable bool mIsDismissed;
     F mCleanup;
@@ -93,7 +127,7 @@ ScopeGuard<F> makeScopeGuard(F cleanup)
 }
 
 //
-// ScopeGuards need only be created though these macros
+// These macros should be enough unless you intend to move ScopeGuard
 //
 
 /** Macro for creating anonymous scope guards */

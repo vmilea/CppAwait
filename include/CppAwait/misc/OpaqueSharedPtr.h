@@ -74,9 +74,7 @@ public:
     /** Move assignment */
     OpaqueSharedPtr& operator=(OpaqueSharedPtr&& other)
     {
-        if (this != &other) {
-            mHolder = std::move(other.mHolder);
-        }
+        mHolder = std::move(other.mHolder);
 
         return *this;
     }

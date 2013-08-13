@@ -85,7 +85,7 @@ public:
         } else {
             Awaitable awt = mCondPushable.asyncWait();
 
-            awt.connectToDone([this, value](Awaitable *awt) {
+            awt.connectToDoneLite([this, value](Awaitable *awt) {
                 if (!awt->didFail()) {
                     ut_assert_(this->mQueue.size() < this->mMaxSize);
 
@@ -115,7 +115,7 @@ public:
         } else {
             Awaitable awt = mCondPoppable.asyncWait();
 
-            awt.connectToDone([this, &outValue](Awaitable *awt) {
+            awt.connectToDoneLite([this, &outValue](Awaitable *awt) {
                 if (!awt->didFail()) {
                     ut_assert_(!this->mQueue.empty());
 

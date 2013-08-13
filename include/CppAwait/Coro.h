@@ -202,6 +202,12 @@ private:
 /** Initialize coroutine library. Must be called once from main stack. */
 void initCoroLib();
 
+/**
+ *  Returns the main coroutine. This points to program's default stack
+ *  and is available after initCoroLib().
+ */
+Coro* mainCoro();
+
 /** Returns the current coroutine */
 Coro* currentCoro();
 

@@ -135,6 +135,11 @@ SignalConnection Awaitable::connectToDone(const OnDoneSignal::slot_type& slot)
     return m->onDone.connect(slot);
 }
 
+void Awaitable::connectToDoneLite(const OnDoneSignal::slot_type& slot)
+{
+    return m->onDone.connectLite(slot);
+}
+
 Completer Awaitable::takeCompleter()
 {
     ut_log_info_("* new  evt-awt '%s'", m->tag.c_str());
@@ -191,9 +196,11 @@ void Awaitable::complete()
     m->didComplete = true;
     m->completerGuard = nullptr;
 
-    m->onDone(this);
+    if (m->awaitingCoro == nullptr) {
+        m->onDone(this);
+    } else {
+        m->onDone(this);
 
-    if (m->awaitingCoro != nullptr) {
         if (currentCoro() != masterCoro() && currentCoro() != m->boundCoro) {
             ut_assert_(false && "called from wrong coroutine");
         }
@@ -212,9 +219,11 @@ void Awaitable::fail(std::exception_ptr eptr)
     m->exceptionPtr = std::move(eptr);
     m->completerGuard = nullptr;
 
-    m->onDone(this);
+    if (m->awaitingCoro == nullptr) {
+        m->onDone(this);
+    } else {
+        m->onDone(this);
 
-    if (m->awaitingCoro != nullptr) {
         if (currentCoro() != masterCoro() && currentCoro() != m->boundCoro) {
             ut_assert_(false && "called from wrong coroutine");
         }
@@ -229,13 +238,13 @@ void Awaitable::clear()
         return; // moved
     }
 
-    if (didComplete() || didFail()) {
+    if (didComplete() || didFail()) { // is done
         ut_log_debug_("* destroy awt '%s' %s(%s)", tag(),
             (std::uncaught_exception() ? "due to uncaught exception " : ""),
             (didComplete() ? "completed" : "failed"));
 
         ut_assert_(m->awaitingCoro == nullptr);
-    } else {
+    } else if (m->completerGuard) { // not nil
         ut_log_debug_("* destroy awt '%s' %s(interrupted)", tag(),
             (std::uncaught_exception() ? "due to uncaught exception " : ""));
 
@@ -368,7 +377,7 @@ void Completer::complete() const
     ut_assert_msg_(currentCoro() == masterCoro(),
         "can't complete from '%s' because '%s' is master coro", currentCoro()->tag(), masterCoro()->tag());
 
-    if (!mGuard.expired()) {
+    if (!isExpired()) {
         ut_log_info_("* complete awt '%s'", mAwtImpl->shell->tag());
 
         mAwtImpl->shell->complete();
@@ -380,7 +389,7 @@ void Completer::fail(std::exception_ptr eptr) const
     ut_assert_msg_(currentCoro() == masterCoro(),
         "can't fail from '%s' because '%s' is master coro", currentCoro()->tag(), masterCoro()->tag());
 
-    if (!mGuard.expired()) {
+    if (!isExpired()) {
         ut_log_info_("* fail awt '%s'", mAwtImpl->shell->tag());
 
         mAwtImpl->shell->fail(std::move(eptr));
@@ -389,7 +398,7 @@ void Completer::fail(std::exception_ptr eptr) const
 
 Awaitable* Completer::awaitable() const
 {
-    return (mGuard.expired() ? nullptr : mAwtImpl->shell);
+    return (isExpired() ? nullptr : mAwtImpl->shell);
 }
 
 }
