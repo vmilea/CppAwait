@@ -53,6 +53,22 @@ public:
     Completer()
         : mAwtImpl(nullptr) { }
 
+    /** Copy constructor */
+    Completer(const Completer& other)
+        : mAwtImpl(other.mAwtImpl)
+        , mGuard(other.mGuard) { }
+
+    /** Copy assignment */
+    Completer& operator=(const Completer& other)
+    {
+        if (this != &other) {
+            mAwtImpl = other.mAwtImpl;
+            mGuard = other.mGuard;
+        }
+
+        return *this;
+    }
+
     /** Move constructor */
     Completer(Completer&& other)
         : mAwtImpl(other.mAwtImpl)
@@ -638,6 +654,20 @@ namespace detail
         CallbackWrapper(Completer&& completer, F&& callback)
             : mCompleter(std::move(completer))
             , mCallback(std::move(callback)) { }
+
+        CallbackWrapper(const CallbackWrapper<F>& other)
+            : mCompleter(other.mCompleter)
+            , mCallback(other.mCallback) { }
+
+        CallbackWrapper<F>& operator=(const CallbackWrapper<F>& other)
+        {
+            if (this != &other) {
+                mCompleter = other.mCompleter;
+                mCallback = other.mCallback;
+            }
+
+            return *this;
+        }
 
         CallbackWrapper(CallbackWrapper<F>&& other)
             : mCompleter(std::move(other.mCompleter))

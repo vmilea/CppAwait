@@ -154,6 +154,10 @@ private:
 
             return *this;
         }
+
+    private:
+        Waiter(const Waiter& other); // noncopyable
+        Waiter& operator=(const Waiter& other); // noncopyable
     };
 
     Condition(const Condition&); // noncopyable

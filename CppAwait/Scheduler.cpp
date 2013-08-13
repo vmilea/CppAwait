@@ -35,7 +35,10 @@ public:
 
     WeakAction& operator=(const WeakAction& other)
     {
-        mAction = other.mAction;
+        if (this != &other) {
+            mAction = other.mAction;
+        }
+
         return *this;
     }
 

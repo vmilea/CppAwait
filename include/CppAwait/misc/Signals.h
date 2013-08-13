@@ -40,6 +40,20 @@ public:
     /** Construct a dummy connection */
     SignalConnection() { }
 
+    /** Copy constructor */
+    SignalConnection(const SignalConnection& other)
+        : mDisconnect(other.mDisconnect) { }
+
+    /** Copy assignment */
+    SignalConnection& operator=(const SignalConnection& other)
+    {
+        if (this != &other) {
+            mDisconnect = other.mDisconnect;
+        }
+
+        return *this;
+    }
+
     /** Move constructor */
     SignalConnection(SignalConnection&& other)
         : mDisconnect(std::move(other.mDisconnect)) { }
@@ -298,6 +312,9 @@ private:
         }
 
     private:
+        Hook(const Hook& other); // noncopyable
+        Hook& operator=(const Hook& other); // noncopyable
+
         slot_type mSlot;
         mutable std::shared_ptr<signal_type *> mDisconnectFlag;
         mutable bool mIsCanceled;
