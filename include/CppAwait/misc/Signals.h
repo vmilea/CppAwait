@@ -27,7 +27,7 @@
 #include "../impl/SharedFlag.h"
 #include "../impl/Assert.h"
 #include "../impl/Foreach.h"
-#include <vector>
+#include "../misc/HybridVector.h"
 #include <memory>
 #include <algorithm>
 #include <functional>
@@ -154,18 +154,14 @@ public:
      */
     void disconnectAll()
     {
-        mNumCanceled = mHooksToAdd.size() + mHooks.size();
-
-        if (mNumCanceled > 0) {
-            ut_foreach_(auto& hook, mHooksToAdd) {
-                hook.cancel();
-            }
-            ut_foreach_(auto& hook, mHooks) {
-                hook.cancel();
-            }
-
-            trimCanceled();
+        ut_foreach_(auto& hook, mHooksToAdd) {
+            hook.cancel();
         }
+        ut_foreach_(auto& hook, mHooks) {
+            hook.cancel();
+        }
+
+        trimCanceled();
     }
 
 protected:
@@ -178,7 +174,14 @@ protected:
 
     ~Signal()
     {
-        disconnectAll();
+        if (!mHooksToAdd.empty()) {
+            ut_foreach_(auto& hook, mHooksToAdd) {
+                hook.cancel();
+            }
+        }
+        ut_foreach_(auto& hook, mHooks) {
+            hook.cancel();
+        }
 
         if (mIsEmitting) {
             // break out of emit loop
@@ -324,7 +327,9 @@ private:
         mutable bool mIsCanceled;
     };
 
-    std::vector<Hook> mHooksToAdd, mHooks;
+    std::vector<Hook> mHooksToAdd;
+    HybridVector<Hook, 2> mHooks;
+
     size_t mNumCanceled;
     bool *mIsEmitting;
 };

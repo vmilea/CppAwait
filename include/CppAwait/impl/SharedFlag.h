@@ -26,7 +26,7 @@ namespace ut {
 typedef std::shared_ptr<void *> SharedFlag;
 
 //
-// allocate from Simple Segregated Storage
+// allocate flag -- possibly from a memory pool
 //
 
 SharedFlag allocateSharedFlag(void *value = nullptr);

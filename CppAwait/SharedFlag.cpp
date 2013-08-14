@@ -16,6 +16,9 @@
 
 #include "ConfigPrivate.h"
 #include <CppAwait/impl/SharedFlag.h>
+
+#ifdef UT_ENABLE_SHARED_FLAG_POOL
+
 #include <boost/pool/pool_alloc.hpp>
 
 namespace ut {
@@ -23,7 +26,7 @@ namespace ut {
 typedef boost::fast_pool_allocator<
     SharedFlag,
     boost::default_user_allocator_new_delete,
-    boost::details::pool::null_mutex> SharedFlagAllocator;
+    boost::details::pool::default_mutex> SharedFlagAllocator;
 
 SharedFlag allocateSharedFlag(void *value)
 {
@@ -31,3 +34,16 @@ SharedFlag allocateSharedFlag(void *value)
 }
 
 }
+
+#else
+
+namespace ut {
+
+SharedFlag allocateSharedFlag(void *value)
+{
+    return std::make_shared<void *>(value);
+}
+
+}
+
+#endif
