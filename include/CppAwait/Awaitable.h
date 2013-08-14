@@ -27,6 +27,7 @@
 #include "Coro.h"
 #include "misc/Signals.h"
 #include "impl/Assert.h"
+#include <memory>
 #include <array>
 
 namespace ut {
@@ -295,7 +296,7 @@ private:
 
     void clear();
 
-    std::unique_ptr<AwaitableImpl> m;
+    AwaitableImpl *m;
 
     template <typename Collection>
     friend typename Collection::iterator awaitAny(Collection& awaitables);

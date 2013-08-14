@@ -62,11 +62,9 @@ Awaitable::Awaitable(std::string tag)
 {
     currentCoro(); // ensure library is initialized
 
-    auto impl = (AwaitableImpl *) AwtImplPool::malloc();
-    new (impl) AwaitableImpl(std::move(tag));
-    impl->shell = this;
-
-    m.reset(impl);
+    m = (AwaitableImpl *) AwtImplPool::malloc();
+    new (m) AwaitableImpl(std::move(tag));
+    m->shell = this;
 }
 
 Awaitable::~Awaitable()
@@ -75,17 +73,19 @@ Awaitable::~Awaitable()
 }
 
 Awaitable::Awaitable(Awaitable&& other)
-    : m(std::move(other.m))
 {
+    m = other.m;
+    other.m = nullptr;
     m->shell = this;
 }
 
 Awaitable& Awaitable::operator=(Awaitable&& other)
 {
-    if (this != &other) {
-        clear();
+    clear();
+    m = other.m;
+    other.m = nullptr;
 
-        m = std::move(other.m);
+    if (m) {
         m->shell = this;
     }
 
@@ -158,7 +158,7 @@ Completer Awaitable::takeCompleter()
 
     m->completerGuard = allocateSharedFlag();
 
-    return Completer(m.get(), m->completerGuard);
+    return Completer(m, m->completerGuard);
 }
 
 bool Awaitable::isNil()
@@ -204,7 +204,7 @@ void Awaitable::complete()
     ut_assert_(!didFail());
 
     m->didComplete = true;
-    m->completerGuard = nullptr;
+    m->completerGuard.reset();
 
     if (m->awaitingCoro == nullptr) {
         m->onDone(this);
@@ -227,7 +227,7 @@ void Awaitable::fail(std::exception_ptr eptr)
     ut_assert_(is(eptr) && "invalid exception_ptr");
 
     m->exceptionPtr = std::move(eptr);
-    m->completerGuard = nullptr;
+    m->completerGuard.reset();
 
     if (m->awaitingCoro == nullptr) {
         m->onDone(this);
@@ -292,9 +292,9 @@ void Awaitable::clear()
         m->userDataDeleter();
     }
 
-    AwaitableImpl *impl = m.release();
-    impl->~AwaitableImpl();
-    AwtImplPool::free(impl);
+    m->~AwaitableImpl();
+    AwtImplPool::free(m);
+    m = nullptr;
 }
 
 Awaitable Awaitable::makeCompleted()
@@ -373,7 +373,7 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
 
     { PushMasterCoro _; // take over
         // run coro until it awaits or finishes
-        yieldTo(coro, awt.m.get());
+        yieldTo(coro, awt.m);
     }
 
     return std::move(awt);

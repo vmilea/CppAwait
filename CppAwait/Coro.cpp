@@ -297,34 +297,46 @@ Coro::Coro()
 
 Coro::~Coro()
 {
-    if (m) {
-        ut_log_verbose_("- destroy coroutine '%s'", m->tag.c_str());
-
-        if (this != sMasterCoroChain[0]) {
-            ut_assert_(!isRunning() && "can't delete a running coroutine");
-
-            if (!m->isFullyUnwinded) {
-                setParent(currentCoro());
-                currentCoro()->yieldTo(this);
-            }
-
-            sPool.recycle(m->stack);
-        } else {
-            delete m->fc;
-        }
-    }
+    clear();
 }
 
 Coro::Coro(Coro&& other)
-    : m(std::move(other.m))
 {
+    m = other.m;
+    other.m = nullptr;
 }
 
 Coro& Coro::operator=(Coro&& other)
 {
-    m = std::move(other.m);
+    clear();
+    m = other.m;
+    other.m = nullptr;
 
     return *this;
+}
+
+void Coro::clear()
+{
+    if (!m) {
+        return; // moved
+    }
+
+    ut_log_verbose_("- destroy coroutine '%s'", m->tag.c_str());
+
+    if (this != sMasterCoroChain[0]) {
+        ut_assert_(!isRunning() && "can't clear a running coroutine");
+
+        if (!m->isFullyUnwinded) {
+            setParent(currentCoro());
+            currentCoro()->yieldTo(this);
+        }
+
+        sPool.recycle(m->stack);
+    } else {
+        delete m->fc;
+    }
+
+    delete m;
 }
 
 const char* Coro::tag()

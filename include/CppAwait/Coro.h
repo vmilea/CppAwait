@@ -27,7 +27,6 @@
 #include "misc/Functional.h"
 #include "impl/Compatibility.h"
 #include <string>
-#include <memory>
 #include <stdexcept>
 
 /** CppAwait namespace */
@@ -185,11 +184,13 @@ private:
     Coro(const Coro& other); // noncopyable
     Coro& operator=(const Coro& other); // noncopyable
 
+    void clear();
+
     void* implYieldTo(Coro *resumeCoro, YieldType type, void *value);
     void* unpackYieldValue(const YieldValue& yReceived);
 
     struct Impl;
-    std::unique_ptr<Impl> m;
+    Impl *m;
 
     friend void initCoroLib();
 };

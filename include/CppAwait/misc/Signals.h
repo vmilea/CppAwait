@@ -196,10 +196,13 @@ protected:
         ut_assert_(mNumCanceled == 0);
         ut_assert_(mHooksToAdd.empty());
 
+        size_t n = mHooks.size();
+        if (n == 0) {
+            return;
+        }
+
         bool isEmitting = true;
         mIsEmitting = &isEmitting;
-
-        size_t n = mHooks.size();
 
         for (size_t i = 0; i < n; i++) {
             const Hook& hook = mHooks[i];
@@ -301,7 +304,7 @@ private:
         bool isCanceled() const
         {
             if (mDisconnectFlag && *mDisconnectFlag == nullptr) {
-                mDisconnectFlag = nullptr;
+                mDisconnectFlag.reset();
                 mIsCanceled = true;
             }
 
@@ -312,7 +315,7 @@ private:
         {
             if (mDisconnectFlag) {
                 *mDisconnectFlag = nullptr;
-                mDisconnectFlag = nullptr;
+                mDisconnectFlag.reset();
             }
 
             mIsCanceled = true;

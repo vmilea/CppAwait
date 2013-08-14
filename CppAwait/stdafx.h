@@ -14,6 +14,3 @@
 #include <cstdarg>
 #include <cassert>
 #include <boost/context/all.hpp>
-#include <boost/asio.hpp>
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
