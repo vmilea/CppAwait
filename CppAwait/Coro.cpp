@@ -21,6 +21,7 @@
 #include <CppAwait/impl/Foreach.h>
 #include <map>
 #include <vector>
+#include <deque>
 #include <algorithm>
 #include <boost/version.hpp>
 #include <boost/context/all.hpp>
@@ -33,6 +34,8 @@ namespace ctx = boost::context;
 
 static std::vector<Coro *> sMasterCoroChain;
 static Coro *sCurrentCoro = nullptr;
+
+static std::deque<ut::Action> sIdleActions;
 
 static std::exception_ptr *sForcedUnwindPtr = nullptr;
 static std::exception_ptr *sYieldForbiddenPtr = nullptr;
@@ -199,12 +202,7 @@ public:
 
 private:
     typedef std::multimap<size_t, boost::coroutines::stack_context> StackMap;
-
-#if BOOST_VERSION == 105200
-    typedef ctx::guarded_stack_allocator Allocator;
-#else
     typedef boost::coroutines::stack_allocator Allocator;
-#endif
 
     Allocator mAllocator;
     StackMap mStacks;
@@ -402,6 +400,20 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
 
     // ut_log_debug_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
+    static bool sIsRunningIdleActions = false;
+
+    if (sCurrentCoro == mainCoro() && !sIdleActions.empty() && !sIsRunningIdleActions) {
+        ut_log_verbose_("-- %d idle actions...", (long) sIdleActions.size());
+
+        sIsRunningIdleActions = true;
+        do {
+            ut::Action action = std::move(sIdleActions.front());
+            sIdleActions.pop_front();
+            action();
+        } while (!sIdleActions.empty());
+        sIsRunningIdleActions = false;
+    }
+
     return unpackYieldValue(*yReceived);
 }
 
@@ -492,6 +504,17 @@ void Coro::fcontextFunc(intptr_t data)
 //
 // misc
 //
+
+// idle action
+
+void postIdleAction(ut::Action action)
+{
+    ut_assert_(currentCoro() != mainCoro() && "can't post idle action from main coroutine");
+
+    sIdleActions.push_back(std::move(action));
+}
+
+// exceptions
 
 std::exception_ptr ForcedUnwind::ptr()
 {

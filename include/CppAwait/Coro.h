@@ -287,6 +287,11 @@ void* yieldExceptionTo(Coro *resumeCoro, const T& e)
     return received;
 }
 
+/**
+ * Queue an action to run after resuming main coroutine.
+ */
+void postIdleAction(Action action);
+
 //
 // misc
 //
