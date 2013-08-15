@@ -140,14 +140,14 @@ std::exception_ptr Awaitable::exception()
     return m->exceptionPtr;
 }
 
-SignalConnection Awaitable::connectToDone(const OnDoneSignal::slot_type& slot)
+SignalConnection Awaitable::connectToDone(OnDoneSignal::slot_type slot)
 {
-    return m->onDone.connect(slot);
+    return m->onDone.connect(std::move(slot));
 }
 
-void Awaitable::connectToDoneLite(const OnDoneSignal::slot_type& slot)
+void Awaitable::connectToDoneLite(OnDoneSignal::slot_type slot)
 {
-    return m->onDone.connectLite(slot);
+    return m->onDone.connectLite(std::move(slot));
 }
 
 Completer Awaitable::takeCompleter()

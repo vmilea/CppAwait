@@ -228,10 +228,10 @@ public:
     std::exception_ptr exception();
 
     /** Add a custom handler to be called when done */
-    SignalConnection connectToDone(const OnDoneSignal::slot_type& slot);
+    SignalConnection connectToDone(OnDoneSignal::slot_type slot);
 
     /** Add a custom handler to be called when done. Faster, but slot can't be disconnected. */
-    void connectToDoneLite(const OnDoneSignal::slot_type& slot);
+    void connectToDoneLite(OnDoneSignal::slot_type slot);
 
     /** Take the completer functor */
     Completer takeCompleter();

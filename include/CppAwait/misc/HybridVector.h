@@ -383,6 +383,15 @@ private:
         return mVector->begin() + (pos - begin());
     }
 
+    // std::vector insert() and erase() take const_iterators
+    // since C++11, this overload is for legacy std libraries
+    //
+    auto vPos(const_iterator pos)
+        -> typename std::vector<T>::iterator
+    {
+        return mVector->begin() + (pos - begin());
+    }
+
     auto aPos(const_iterator pos) const
         -> typename boost::container::static_vector<T, N>::const_iterator
     {

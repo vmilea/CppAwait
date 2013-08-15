@@ -100,7 +100,7 @@ Awaitable asyncHttpDownload(boost::asio::io_service& io, const std::string& host
     static int id = 0;
     auto tag = string_printf("asyncHttpDownload-%d", id++);
 
-    return startAsync(tag, [&io, host, path, outResponse]() {
+    return startAsync(std::move(tag), [&io, host, path, outResponse]() {
         tcp::socket socket(io);
 
         size_t contentLength;
