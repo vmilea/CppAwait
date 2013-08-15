@@ -25,7 +25,10 @@
 
 #include "../Config.h"
 #include <vector>
+
+#ifndef Q_MOC_RUN // workaround for QTBUG-29331
 #include <boost/container/static_vector.hpp>
+#endif
 
 namespace ut {
 

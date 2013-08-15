@@ -403,7 +403,7 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
     static bool sIsRunningIdleActions = false;
 
     if (sCurrentCoro == mainCoro() && !sIdleActions.empty() && !sIsRunningIdleActions) {
-        ut_log_verbose_("-- %d idle actions...", (long) sIdleActions.size());
+        ut_log_verbose_("-- %ld idle actions...", (long) sIdleActions.size());
 
         sIsRunningIdleActions = true;
         do {
