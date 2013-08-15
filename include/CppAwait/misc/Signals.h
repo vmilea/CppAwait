@@ -27,12 +27,14 @@
 #include "../impl/SharedFlag.h"
 #include "../impl/Assert.h"
 #include "../impl/Foreach.h"
+#include "../misc/Functional.h"
 #include "../misc/HybridVector.h"
-#include <memory>
 #include <algorithm>
-#include <functional>
 
 namespace ut {
+
+template <typename Signature, typename Slot = std::function<Signature>>
+class Signal;
 
 /** Allows disconnecting a single slot from signal */
 class SignalConnection
@@ -81,25 +83,25 @@ public:
     }
 
 private:
-    SignalConnection(std::function<void ()> disconnect)
+    SignalConnection(ut::Action&& disconnect)
         : mDisconnect(std::move(disconnect)) { }
 
-    std::function<void ()> mDisconnect;
+    ut::Action mDisconnect;
 
-    template <typename Signature>
+    template <typename Signature, typename Slot>
     friend class Signal;
 };
 
 /** Lightweight signal - single threaded, no MPL */
-template <typename Signature>
+template <typename Signature, typename Slot>
 class Signal
 {
 public:
     /** Slot signature */
-    typedef std::function<Signature> slot_type;
+    typedef Slot slot_type;
 
     /** Signal alias */
-    typedef Signal<Signature> signal_type;
+    typedef Signal<Signature, Slot> signal_type;
 
     /**
      * Connect a slot
@@ -237,8 +239,8 @@ protected:
     }
 
 private:
-    Signal(const Signal<Signature>&); // noncopyable
-    Signal<Signature>& operator=(const Signal<Signature>&); // noncopyable
+    Signal(const Signal&); // noncopyable
+    Signal& operator=(const Signal&); // noncopyable
 
     void trimCanceled()
     {
@@ -338,7 +340,7 @@ private:
 };
 
 /** Signal with 0 arguments */
-class Signal0 : public Signal<void ()>
+class Signal0 : public Signal<void (), ut::Action>
 {
 public:
     Signal0() { }

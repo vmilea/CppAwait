@@ -17,10 +17,17 @@
 #pragma once
 
 #include "../Config.h"
+#include "FastAction.h"
 #include <functional>
 
 namespace ut {
     using namespace std::placeholders;
 
-    typedef std::function<void ()> Action;
+    // Pick a FastAction large enough to wrap std::function without
+    // dynamic allocation. This usually means efficient closures
+    // for up to 4 pointers.
+    //
+    typedef ut::OptimalAction<
+        sizeof(std::function<void ()>)
+    >::type Action;
 }

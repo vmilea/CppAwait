@@ -51,20 +51,17 @@ class Completer
 {
 public:
     /** Construct a dummy completer */
-    Completer()
-        : mAwtImpl(nullptr) { }
+    Completer() { }
 
     /** Copy constructor */
     Completer(const Completer& other)
-        : mAwtImpl(other.mAwtImpl)
-        , mGuard(other.mGuard) { }
+        : mRef(other.mRef) { }
 
     /** Copy assignment */
     Completer& operator=(const Completer& other)
     {
         if (this != &other) {
-            mAwtImpl = other.mAwtImpl;
-            mGuard = other.mGuard;
+            mRef = other.mRef;
         }
 
         return *this;
@@ -72,17 +69,24 @@ public:
 
     /** Move constructor */
     Completer(Completer&& other)
-        : mAwtImpl(other.mAwtImpl)
-        , mGuard(std::move(other.mGuard)) { }
+        : mRef(std::move(other.mRef)) { }
 
     /** Move assignment */
     Completer& operator=(Completer&& other)
     {
-        mAwtImpl = other.mAwtImpl;
-        mGuard = std::move(other.mGuard);
+        mRef = std::move(other.mRef);
 
         return *this;
     }
+
+    /** Check if awaitable is done */
+    bool isExpired() const
+    {
+        return mRef.expired();
+    }
+
+    /** Returns associated awaitable if not expired, nullptr otherwise. */
+    Awaitable* awaitable() const;
 
     /** Calls complete() */
     void operator()() const
@@ -121,22 +125,11 @@ public:
         return detail::CallbackWrapper<F>(*this, std::move(func));
     }
 
-    /** Check if associated awaitable is done */
-    bool isExpired() const
-    {
-        return mGuard.expired();
-    }
-
-    /** Returns associated awaitable if not expired, nullptr otherwise. */
-    Awaitable* awaitable() const;
-
 private:
-    Completer(AwaitableImpl *awtImpl, const std::shared_ptr<void>& guard)
-        : mAwtImpl(awtImpl)
-        , mGuard(guard) { }
+    explicit Completer(const std::shared_ptr<void *>& ref)
+        : mRef(ref) { }
 
-    AwaitableImpl *mAwtImpl;
-    std::weak_ptr<void> mGuard;
+    std::weak_ptr<void *> mRef;
 
     friend class Awaitable;
 };
@@ -170,11 +163,34 @@ private:
 class Awaitable
 {
 public:
-    /** Coroutine signature required by startAsync() */
-    typedef std::function<void ()> AsyncFunc;
+    /**
+     * Pointer to implementation
+     *
+     * Useful when you need a lightweight reference that is not invalidated
+     * after std::move(Awaitable), but don't want to carry a Completer.
+     */
+    struct Pointer
+    {
+        AwaitableImpl *m;
+
+        Pointer(AwaitableImpl *m)
+            : m(m) { }
+
+        Awaitable* operator->() const
+        {
+            return get();
+        }
+
+        Awaitable& operator*() const
+        {
+            return *get();
+        }
+
+        Awaitable* get() const;
+    };
 
     /** Signal emitted on complete / fail */
-    typedef Signal1<Awaitable*> OnDoneSignal;
+    typedef Signal0 OnDoneSignal;
 
     /** Create an awaitable this way if you intend to take its Completer */
     explicit Awaitable(std::string tag = std::string());
@@ -245,22 +261,8 @@ public:
     /** Sets an identifier for debugging */
     void setTag(std::string tag);
 
-    /**
-     * Associate some custom data with this awaitable
-     *
-     * @param userData       user data
-     * @param takeOwnership  whether the awaitable should delete userData when destroyed
-     */
-    template<typename T>
-    void bindUserData(T *userData, bool takeOwnership = true);
-
-    /** Access user data by reference */
-    template<typename T>
-    T& userData();
-
-    /** Access user data */
-    template<typename T>
-    T* userDataPtr();
+    /** Returns implementation pointer */
+    Pointer pointer();
 
     /** Shorthand for takeCompleter().wrap(func) */
     template <typename F>
@@ -286,10 +288,6 @@ private:
     Awaitable(const Awaitable&); // noncopyable
     Awaitable& operator=(const Awaitable&); // noncopyable
 
-    void bindRawUserData(void *userData, Action deleter);
-
-    void* rawUserDataPtr();
-
     void complete();
 
     void fail(std::exception_ptr eptr);
@@ -302,7 +300,7 @@ private:
     friend typename Collection::iterator awaitAny(Collection& awaitables);
 
     friend class Completer;
-    friend Awaitable startAsync(std::string tag, AsyncFunc func, size_t stackSize);
+    friend Awaitable startAsync(std::string tag, Action func, size_t stackSize);
 };
 
 
@@ -331,7 +329,7 @@ private:
  *
  * Actions created this way have their completer already taken.
  */
-Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize = Coro::defaultStackSize());
+Awaitable startAsync(std::string tag, Action func, size_t stackSize = Coro::defaultStackSize());
 
 
 /**
@@ -612,33 +610,6 @@ inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Aw
 //
 // impl
 //
-
-template<typename T>
-void Awaitable::bindUserData(T *userData, bool takeOwnership)
-{
-    bindRawUserData(userData,
-        (takeOwnership
-            ? [=]() { delete userData; }
-            : Action()));
-}
-
-template<typename T>
-T& Awaitable::userData()
-{
-    void *data = rawUserDataPtr();
-
-    ut_assert_(data != nullptr);
-
-    return *reinterpret_cast<T*>(data);
-}
-
-template<typename T>
-T* Awaitable::userDataPtr()
-{
-    void *data = rawUserDataPtr();
-
-    return reinterpret_cast<T*>(data);
-}
 
 namespace detail
 {

@@ -152,7 +152,7 @@ public:
         auto recv = std::make_shared<boost::asio::streambuf>();
 
         // this coroutine reads inbound messages
-        ut::Awaitable::AsyncFunc writer = [this]() {
+        ut::Action writer = [this]() {
             do {
                 if (mMsgQueue.empty()) {
                     ut::Awaitable awtMsgQueued("evt-msg-queued");
@@ -170,7 +170,7 @@ public:
         };
 
         // this coroutine writes outbound messages
-        ut::Awaitable::AsyncFunc reader = [this, recv]() {
+        ut::Action reader = [this, recv]() {
             std::string line;
 
             bool quit = false;

@@ -37,10 +37,8 @@ struct AwaitableImpl
     Coro *awaitingCoro;
     bool didComplete;
     std::exception_ptr exceptionPtr;
-    std::shared_ptr<void> completerGuard;
+    std::shared_ptr<void *> completerGuard;
     Awaitable::OnDoneSignal onDone;
-    void *userData;
-    Action userDataDeleter;
 
     AwaitableImpl(std::string&& tag)
         : shell(nullptr)
@@ -48,7 +46,6 @@ struct AwaitableImpl
         , boundCoro(nullptr)
         , awaitingCoro(nullptr)
         , didComplete(false)
-        , userData(nullptr)
     {
     }
 };
@@ -156,9 +153,9 @@ Completer Awaitable::takeCompleter()
 
     ut_assert_(isNil() && "completer already taken");
 
-    m->completerGuard = allocateSharedFlag();
+    m->completerGuard = allocateSharedFlag(m);
 
-    return Completer(m, m->completerGuard);
+    return Completer(m->completerGuard);
 }
 
 bool Awaitable::isNil()
@@ -176,19 +173,9 @@ void Awaitable::setTag(std::string tag)
     m->tag = std::move(tag);
 }
 
-void Awaitable::bindRawUserData(void *userData, Action deleter)
+Awaitable::Pointer Awaitable::pointer()
 {
-    if (m->userDataDeleter) {
-        m->userDataDeleter();
-    }
-
-    m->userData = userData;
-    m->userDataDeleter = std::move(deleter);
-}
-
-void* Awaitable::rawUserDataPtr()
-{
-    return m->userData;
+    return Pointer(m);
 }
 
 void Awaitable::setAwaitingCoro(Coro *coro)
@@ -207,9 +194,9 @@ void Awaitable::complete()
     m->completerGuard.reset();
 
     if (m->awaitingCoro == nullptr) {
-        m->onDone(this);
+        m->onDone();
     } else {
-        m->onDone(this);
+        m->onDone();
 
         if (currentCoro() != masterCoro() && currentCoro() != m->boundCoro) {
             ut_assert_(false && "called from wrong coroutine");
@@ -230,9 +217,9 @@ void Awaitable::fail(std::exception_ptr eptr)
     m->completerGuard.reset();
 
     if (m->awaitingCoro == nullptr) {
-        m->onDone(this);
+        m->onDone();
     } else {
-        m->onDone(this);
+        m->onDone();
 
         if (currentCoro() != masterCoro() && currentCoro() != m->boundCoro) {
             ut_assert_(false && "called from wrong coroutine");
@@ -288,10 +275,6 @@ void Awaitable::clear()
         delete m->boundCoro;
     }
 
-    if (m->userDataDeleter) {
-        m->userDataDeleter();
-    }
-
     m->~AwaitableImpl();
     AwtImplPool::free(m);
     m = nullptr;
@@ -311,7 +294,7 @@ Awaitable Awaitable::makeFailed(std::exception_ptr eptr)
     return std::move(awt);
 }
 
-Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSize)
+Awaitable startAsync(std::string tag, Action func, size_t stackSize)
 {
     ut_log_info_("* new coro-awt '%s'", tag.c_str());
 
@@ -341,7 +324,7 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
         } catch (...) {
             ut_log_info_("* fail coro-awt '%s' (exception)", m->shell->tag());
 
-            ut_assert_(!std::uncaught_exception() && "may not throw from AsyncFunc while another exception is propagating");
+            ut_assert_(!std::uncaught_exception() && "may not throw from async coroutine while another exception is propagating");
 
             eptr = std::current_exception();
             ut_assert_(is(eptr));
@@ -379,20 +362,38 @@ Awaitable startAsync(std::string tag, Awaitable::AsyncFunc func, size_t stackSiz
     return std::move(awt);
 }
 
+//
+// Pointer
+//
+
+Awaitable* Awaitable::Pointer::get() const
+{
+    return m->shell;
+}
 
 //
 // Completer
 //
+
+Awaitable* Completer::awaitable() const
+{
+    if (auto strongRef = mRef.lock()) {
+        return ((AwaitableImpl *) *strongRef)->shell;
+    } else {
+        return nullptr;
+    }
+}
 
 void Completer::complete() const
 {
     ut_assert_msg_(currentCoro() == masterCoro(),
         "can't complete from '%s' because '%s' is master coro", currentCoro()->tag(), masterCoro()->tag());
 
-    if (!isExpired()) {
-        ut_log_info_("* complete awt '%s'", mAwtImpl->shell->tag());
+    if (auto strongRef = mRef.lock()) {
+        auto shell = ((AwaitableImpl *) *strongRef)->shell;
 
-        mAwtImpl->shell->complete();
+        ut_log_info_("* complete awt '%s'", shell->tag());
+        shell->complete();
     }
 }
 
@@ -401,16 +402,12 @@ void Completer::fail(std::exception_ptr eptr) const
     ut_assert_msg_(currentCoro() == masterCoro(),
         "can't fail from '%s' because '%s' is master coro", currentCoro()->tag(), masterCoro()->tag());
 
-    if (!isExpired()) {
-        ut_log_info_("* fail awt '%s'", mAwtImpl->shell->tag());
+    if (auto strongRef = mRef.lock()) {
+        auto shell = ((AwaitableImpl *) *strongRef)->shell;
 
-        mAwtImpl->shell->fail(std::move(eptr));
+        ut_log_info_("* fail awt '%s'", shell->tag());
+        shell->fail(std::move(eptr));
     }
-}
-
-Awaitable* Completer::awaitable() const
-{
-    return (isExpired() ? nullptr : mAwtImpl->shell);
 }
 
 }

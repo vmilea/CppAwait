@@ -84,9 +84,10 @@ public:
             return Awaitable::makeCompleted();
         } else {
             Awaitable awt = mCondPushable.asyncWait();
+            auto awtPtr = awt.pointer();
 
-            awt.connectToDoneLite([this, value](Awaitable *awt) {
-                if (!awt->didFail()) {
+            awt.connectToDoneLite([this, awtPtr, value]() {
+                if (!awtPtr->didFail()) {
                     ut_assert_(this->mQueue.size() < this->mMaxSize);
 
                     this->mQueue.push_back(value);
@@ -114,9 +115,10 @@ public:
             return Awaitable::makeCompleted();
         } else {
             Awaitable awt = mCondPoppable.asyncWait();
+            auto awtPtr = awt.pointer();
 
-            awt.connectToDoneLite([this, &outValue](Awaitable *awt) {
-                if (!awt->didFail()) {
+            awt.connectToDoneLite([this, awtPtr, &outValue]() {
+                if (!awtPtr->didFail()) {
                     ut_assert_(!this->mQueue.empty());
 
                     outValue = std::move(this->mQueue.front());
