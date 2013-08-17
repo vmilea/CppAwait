@@ -86,7 +86,7 @@ public:
             Awaitable awt = mCondPushable.asyncWait();
             auto awtPtr = awt.pointer();
 
-            awt.connectToDoneLite([this, awtPtr, value]() {
+            awt.then([this, awtPtr, value]() {
                 if (!awtPtr->didFail()) {
                     ut_assert_(this->mQueue.size() < this->mMaxSize);
 
@@ -117,7 +117,7 @@ public:
             Awaitable awt = mCondPoppable.asyncWait();
             auto awtPtr = awt.pointer();
 
-            awt.connectToDoneLite([this, awtPtr, &outValue]() {
+            awt.then([this, awtPtr, &outValue]() {
                 if (!awtPtr->didFail()) {
                     ut_assert_(!this->mQueue.empty());
 

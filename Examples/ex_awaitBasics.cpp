@@ -59,7 +59,7 @@ static ut::Awaitable asyncSimpleDelay(long delay)
     });
 
     // cancel timer if interrupted
-    awt.connectToDone([timer]() {
+    awt.then([timer]() {
         delete timer; // posts error::operation_aborted
     });
 

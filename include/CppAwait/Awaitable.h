@@ -25,7 +25,6 @@
 
 #include "Config.h"
 #include "Coro.h"
-#include "misc/Signals.h"
 #include "impl/Assert.h"
 #include <memory>
 #include <array>
@@ -189,9 +188,6 @@ public:
         Awaitable* get() const;
     };
 
-    /** Signal emitted on complete / fail */
-    typedef Signal0 OnDoneSignal;
-
     /** Create an awaitable this way if you intend to take its Completer */
     explicit Awaitable(std::string tag = std::string());
 
@@ -244,10 +240,7 @@ public:
     std::exception_ptr exception();
 
     /** Add a custom handler to be called when done */
-    SignalConnection connectToDone(OnDoneSignal::slot_type slot);
-
-    /** Add a custom handler to be called when done. Faster, but slot can't be disconnected. */
-    void connectToDoneLite(OnDoneSignal::slot_type slot);
+    void then(ut::Action slot);
 
     /** Take the completer functor */
     Completer takeCompleter();

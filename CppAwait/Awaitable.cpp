@@ -17,8 +17,9 @@
 #include "ConfigPrivate.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/impl/SharedFlag.h>
-#include <CppAwait/Log.h>
 #include <CppAwait/impl/StringUtil.h>
+#include <CppAwait/misc/Signals.h>
+#include <CppAwait/Log.h>
 #include <cstdio>
 #include <cstdarg>
 #include <boost/pool/singleton_pool.hpp>
@@ -38,7 +39,7 @@ struct AwaitableImpl
     bool didComplete;
     std::exception_ptr exceptionPtr;
     std::shared_ptr<void *> completerGuard;
-    Awaitable::OnDoneSignal onDone;
+    Signal0 onDone;
 
     AwaitableImpl(std::string&& tag)
         : shell(nullptr)
@@ -137,12 +138,7 @@ std::exception_ptr Awaitable::exception()
     return m->exceptionPtr;
 }
 
-SignalConnection Awaitable::connectToDone(OnDoneSignal::slot_type slot)
-{
-    return m->onDone.connect(std::move(slot));
-}
-
-void Awaitable::connectToDoneLite(OnDoneSignal::slot_type slot)
+void Awaitable::then(ut::Action slot)
 {
     return m->onDone.connectLite(std::move(slot));
 }

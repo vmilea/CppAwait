@@ -72,7 +72,7 @@ Awaitable asyncDelay(boost::asio::io_service& io, const DurationType& delay)
         return eptr(ec);
     }));
 
-    awt.connectToDoneLite([timer]() {
+    awt.then([timer]() {
         delete timer;
     });
 
