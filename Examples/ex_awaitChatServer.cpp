@@ -151,7 +151,7 @@ public:
     {
         auto recv = std::make_shared<boost::asio::streambuf>();
 
-        // this coroutine reads inbound messages
+        // this coroutine writes outbound messages
         ut::Action writer = [this]() {
             do {
                 if (mMsgQueue.empty()) {
@@ -169,7 +169,7 @@ public:
             } while (true);
         };
 
-        // this coroutine writes outbound messages
+        // this coroutine reads inbound messages
         ut::Action reader = [this, recv]() {
             std::string line;
 
@@ -203,11 +203,11 @@ public:
             ut::Awaitable awtWriter = ut::startAsync("clientSession-writer", writer);
 
             // yield until /leave or Asio exception
-            ut::Awaitable& done = ut::awaitAny(awtReader, awtWriter);
+            ut::Awaitable *done = ut::awaitAny(awtReader, awtWriter);
 
             mRoom.leave(this);
 
-            done.await(); // check for exception, won't yield again since already done
+            done->await(); // check for exception, won't yield again since already done
         });
     }
 
@@ -266,9 +266,9 @@ static ut::Awaitable asyncChatServer(unsigned short port)
             ut::Awaitable awtSessionTerminated = ut::asyncAny(mSessions, posTerminated);
 
             // yield until a new connection has been accepted / terminated
-            ut::Awaitable& done = ut::awaitAny(awtAccept, awtSessionTerminated);
+            ut::Awaitable *done = ut::awaitAny(awtAccept, awtSessionTerminated);
 
-            if (&done == &awtAccept) {
+            if (done == &awtAccept) {
                 try {
                     awtAccept.await(); // check for exception
                     printf ("client acepted\n");

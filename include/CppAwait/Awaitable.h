@@ -257,7 +257,7 @@ public:
     /** Returns implementation pointer */
     Pointer pointer();
 
-    /** Shorthand for takeCompleter().wrap(func) */
+    /** Shorthand for takeCompleter().wrap(std::move(func)) */
     template <typename F>
     detail::CallbackWrapper<F> wrap(F func)
     {
@@ -313,12 +313,12 @@ private:
  * never need to deal directly with Coro.
  *
  * Uncaught exceptions from func -- except for ForcedUnwind -- will pop out on
- * awaiting coroutine.
+ * the awaiting coroutine.
  *
  * If you delete the Awaitable while the func is running (i.e. while it is awaiting
  * some suboperation), the coroutine will resume with a ForcedUnwind exception.
- * It's expected func will exit immediately upon ForcedUnwind, make sure not to
- * ignore it in a catch (...) handler.
+ * It's expected func will exit immediately upon ForcedUnwind, so make sure not to
+ * ignore it in a catch(...) block.
  *
  * Actions created this way have their completer already taken.
  */
@@ -371,7 +371,7 @@ Awaitable* selectAwaitable(T& element)
 
 /**
  * Yield until all awaitables have completed or one of them fails
- * @param awaitables  a collection rom which awaitables can be selected
+ * @param awaitables  a collection from which awaitables can be selected
  *
  * Equivalent to calling await() in sequence for each member of the collection.
  * If any awaitable fails the exception propagates to caller.
@@ -394,7 +394,7 @@ void awaitAll(Collection& awaitables)
 /**
  * Yield until any of the awaitables has completed or failed
  * @param awaitables  a collection from which awaitables can be selected
- * @return  iterator to an awaitable that is done
+ * @return  iterator to the first awaitable that is done
  *
  * Note: If an awaitable fails, the exception is not propagated. You can
  *       trigger it explicitly by awaiting on returned iterator.
@@ -417,7 +417,7 @@ typename Collection::iterator awaitAny(Collection& awaitables)
         havePendingAwts = true;
     }
     if (!havePendingAwts) {
-        return awaitables.end();
+        return awaitables.begin();
     }
 
     for (auto it = awaitables.begin(); it != awaitables.end(); ++it) {
@@ -573,31 +573,31 @@ inline Awaitable* awaitAny(Awaitable *awt1, Awaitable *awt2, Awaitable *awt3, Aw
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2)
+inline Awaitable* awaitAny(Awaitable& awt1, Awaitable& awt2)
 {
     std::array<Awaitable*, 2> awts = {{ &awt1, &awt2 }};
-    return **awaitAny(awts);
+    return *awaitAny(awts);
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3)
+inline Awaitable* awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3)
 {
     std::array<Awaitable*, 3> awts = {{ &awt1, &awt2, &awt3 }};
-    return **awaitAny(awts);
+    return *awaitAny(awts);
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4)
+inline Awaitable* awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4)
 {
     std::array<Awaitable*, 4> awts = {{ &awt1, &awt2, &awt3, &awt4 }};
-    return **awaitAny(awts);
+    return *awaitAny(awts);
 }
 
 /** Yield until any of the awaitables has completed or failed */
-inline Awaitable& awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4, Awaitable& awt5)
+inline Awaitable* awaitAny(Awaitable& awt1, Awaitable& awt2, Awaitable& awt3, Awaitable& awt4, Awaitable& awt5)
 {
     std::array<Awaitable*, 5> awts = {{ &awt1, &awt2, &awt3, &awt4, &awt5 }};
-    return **awaitAny(awts);
+    return *awaitAny(awts);
 }
 
 //

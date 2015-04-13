@@ -148,13 +148,13 @@ static ut::Awaitable asyncChatClient(const std::string& host, const std::string&
             });
 
             // quit on /leave or Asio exception
-            ut::Awaitable& done = ut::awaitAny(awtReader, awtWriter);
+            ut::Awaitable *done = ut::awaitAny(awtReader, awtWriter);
 
             // cancel socket operations?
             // socket.shutdown(tcp::socket::shutdown_both);
 
             // trigger exception, if any
-            done.await();
+            done->await();
         } catch (const std::exception& ex) {
             printf ("Failed! %s - %s\n", typeid(ex).name(), ex.what());
         } catch (...) {
