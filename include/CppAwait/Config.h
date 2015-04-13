@@ -16,7 +16,8 @@
 
 #pragma once
 
-#include <stddef.h>
+#include <cstddef>
+#include <cstdarg>
 
 #ifndef WINVER
 #define WINVER 0x501

@@ -187,17 +187,17 @@ public:
 
     static size_t maximumStackSize()
     {
-        return Allocator::maximum_stacksize();
+        return boost::coroutines::stack_traits::maximum_size();
     }
 
     static size_t defaultStackSize()
     {
-        return Allocator::default_stacksize();
+        return boost::coroutines::stack_traits::default_size();
     }
 
     static size_t minimumStackSize()
     {
-        return Allocator::minimum_stacksize();
+        return boost::coroutines::stack_traits::minimum_size();
     }
 
 private:
@@ -250,7 +250,7 @@ struct Coro::Impl
 {
     std::string tag;
     boost::coroutines::stack_context stack;
-    ctx::fcontext_t *fc;
+    ctx::fcontext_t fc;
     Coro *parent;
     Coro::Func func;
     bool isRunning;
@@ -288,7 +288,6 @@ Coro::Coro()
 {
     ut_log_verbose_("- new coroutine '%s'", m->tag.c_str());
 
-    m->fc = new ctx::fcontext_t();
     m->isRunning = true;
     m->isFullyUnwinded = false;
 }
@@ -330,8 +329,6 @@ void Coro::clear()
         }
 
         sPool.recycle(m->stack);
-    } else {
-        delete m->fc;
     }
 
     delete m;
@@ -396,7 +393,7 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
     sCurrentCoro = resumeCoro;
 
     YieldValue ySent(type, value);
-    auto yReceived = (YieldValue *) ctx::jump_fcontext(m->fc, resumeCoro->m->fc, (intptr_t) &ySent);
+    auto yReceived = (YieldValue *) ctx::jump_fcontext(&m->fc, resumeCoro->m->fc, (intptr_t) &ySent);
 
     // ut_log_debug_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 

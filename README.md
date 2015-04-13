@@ -103,7 +103,7 @@ Features
 Installation
 ============
 
-1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.54+ with _Boost.Context_, _Boost.Coroutine_ and _Boost.System_ compiled [[*]](#msvc10). Quick guide:
+1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.57+ with _Boost.Context_, _Boost.Coroutine_ and _Boost.System_ compiled [[*]](#msvc10). Quick guide:
 
    - download Boost archive
    - ./bootstrap
