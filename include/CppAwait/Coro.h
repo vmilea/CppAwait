@@ -154,6 +154,27 @@ public:
      */
     void* yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr);
 
+    /**
+    * Suspend self, throw exception on parent coroutine. The current coroutine is
+    * assumed to have finished unwinding, it will never be resumed and its stack
+    * is being recycled. The exception_ptr must be allocated on heap and will be
+    * automatically deleted before throwing the exception.
+    * @param   peptr        heap allocated exception_ptr containing the exception to throw
+    * @return  a value or exception
+    */
+    void* yieldFinalException(std::exception_ptr* peptr);
+
+    /**
+    * Suspend self, throw exception on given coroutine. The current coroutine is
+    * assumed to have finished unwinding, it will never be resumed and its stack
+    * is being recycled. The exception_ptr must be allocated on heap and will be
+    * automatically deleted before throwing the exception.
+    * @param   resumeCoro   coroutine to resume
+    * @param   peptr        heap allocated exception_ptr containing the exception to throw
+    * @return  a value or exception
+    */
+    void* yieldFinalExceptionTo(Coro *resumeCoro, std::exception_ptr* peptr);
+
     /** Coroutine to yield to by default */
     Coro* parent();
 

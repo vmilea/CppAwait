@@ -254,15 +254,13 @@ struct Coro::Impl
     Coro *parent;
     Coro::Func func;
     bool isRunning;
-    bool isFullyUnwinded;
 
     Impl(std::string&& tag, boost::coroutines::stack_context stack)
         : tag(std::move(tag))
         , stack(stack)
         , fc(nullptr)
         , parent(nullptr)
-        , isRunning(false)
-        , isFullyUnwinded(true) { }
+        , isRunning(false) { }
 };
 
 Coro::Coro(std::string tag, Func func, size_t stackSize)
@@ -289,7 +287,6 @@ Coro::Coro()
     ut_log_verbose_("- new coroutine '%s'", m->tag.c_str());
 
     m->isRunning = true;
-    m->isFullyUnwinded = false;
 }
 
 Coro::~Coro()
@@ -322,12 +319,6 @@ void Coro::clear()
 
     if (this != sMasterCoroChain[0]) {
         ut_assert_(!isRunning() && "can't clear a running coroutine");
-
-        if (!m->isFullyUnwinded) {
-            setParent(currentCoro());
-            currentCoro()->yieldTo(this);
-        }
-
         sPool.recycle(m->stack);
     }
 
@@ -354,7 +345,6 @@ void Coro::init(Func func)
     m->fc = ctx::make_fcontext(m->stack.sp, m->stack.size, &Coro::fcontextFunc);
 
     m->isRunning = true;
-    m->isFullyUnwinded = false;
 }
 
 void* Coro::yield(void *value)
@@ -378,7 +368,20 @@ void* Coro::yieldExceptionTo(Coro *resumeCoro, std::exception_ptr eptr)
 {
     ut_log_debug_("- '%s' > '%s' (exception)", sCurrentCoro->tag(), resumeCoro->tag());
 
-    return implYieldTo(resumeCoro, YT_EXCEPTION, &eptr);
+    auto peptr = new std::exception_ptr(eptr);
+    return implYieldTo(resumeCoro, YT_EXCEPTION, peptr);
+}
+
+void* Coro::yieldFinalException(std::exception_ptr *peptr)
+{
+    return yieldFinalExceptionTo(m->parent, peptr);
+}
+
+void* Coro::yieldFinalExceptionTo(Coro *resumeCoro, std::exception_ptr *peptr)
+{
+    ut_log_debug_("- '%s' > '%s' (final exception)", sCurrentCoro->tag(), resumeCoro->tag());
+
+    return implYieldTo(resumeCoro, YT_EXCEPTION, peptr);
 }
 
 void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
@@ -386,7 +389,7 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
     ut_assert_(sCurrentCoro == this);
     ut_assert_(resumeCoro != nullptr);
     ut_assert_(resumeCoro != this);
-    ut_assert_(!(resumeCoro->m->isFullyUnwinded));
+    ut_assert_(resumeCoro->isRunning());
 
     // ut_log_debug_("-- jumping to '%s', type = %s", resumeCoro->tag(), (type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 
@@ -417,12 +420,15 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
 void* Coro::unpackYieldValue(const YieldValue& yReceived)
 {
     if (yReceived.type == YT_EXCEPTION) {
-        auto exPtr = (std::exception_ptr *) yReceived.value;
+        auto peptr = (std::exception_ptr *) yReceived.value;
 
-        ut_assert_(exPtr != nullptr);
-        ut_assert_(is(*exPtr));
+        ut_assert_(peptr != nullptr);
+        ut_assert_(is(*peptr));
 
-        std::rethrow_exception(*exPtr);
+        auto eptr = std::exception_ptr(*peptr);
+        delete peptr;
+
+        std::rethrow_exception(eptr);
         return nullptr;
     } else {
         ut_assert_(yReceived.type == YT_RESULT);
@@ -470,30 +476,18 @@ void Coro::fcontextFunc(intptr_t data)
         peptr = new std::exception_ptr(eptr);
     }
 
+    // all remaining objects on stack have trivial destructors, coroutine if considered unwinded
     coro->m->isRunning = false;
 
-    if (peptr != nullptr) {
-        // Yielding an exception is trickier because we need to get back here
-        // in order to delete the exception_ptr. To make this work the coroutine
-        // briefly resumes in destructor if isFullyUnwinded false.
-
-        try {
-            coro->yieldException(*peptr);
-        } catch (...) {
-            ut_assert_(false && "post run exception");
-        }
-
-        ut_log_debug_("- '%s' unwinding", coro->tag());
-        delete peptr;
-    }
-
-    // all remaining objects on stack have trivial destructors, coroutine if considered fully unwinded
-
     try {
-        coro->m->isFullyUnwinded = true;
-        coro->yield();
-        ut_assert_(false && "yielded back to fully unwinded coroutine");
-    } catch (...) {
+        if (peptr)
+            coro->yieldFinalException(peptr);
+        else
+            coro->yield();
+
+        ut_assert_(false && "yielded back to unwinded coroutine");
+    }
+    catch (...) {
         ut_assert_(false && "post run exception");
     }
 }
