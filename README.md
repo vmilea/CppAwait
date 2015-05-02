@@ -114,8 +114,8 @@ Installation
 
 3. __Build CppAwait__:
 
-   - `mkdir build\_dir ; cd build\_dir`
-   - `cmake -G "your-generator" -DBOOST\_ROOT="path-to-boost" "path-to-CppAwait"`
+   - `mkdir build_dir ; cd build_dir`
+   - `cmake -G "your-generator" -DBOOST_ROOT="path-to-boost" "path-to-CppAwait"`
    - open solution / make
 
 <a id="deps">(*)</a> _Boost.Chrono_ is additionally required to compile the examples on Visual C++ 2010. There is an optional Flickr example which depends on OpenSSL. Place OpenSSL under `C:\OpenSSL` for automatic detection on Windows.
