@@ -11,7 +11,7 @@ The goal: make it easier to write responsive applications that have to deal with
 How it works
 ============
 
-CppAwait provides an _await_ construct similar to the one from C# 5 (see [MSDN](http://msdn.microsoft.com/en-us/library/hh191443.aspx)). Upon reaching an _await_ expression the C# compiler automatically transforms the rest of the method into a task continuation. In C++ a similar effect can be achieved through coroutines (which CppAwait implements on top of Boost.Context). Calling _await()_ will suspend a coroutine until the associated task completes. The program is free to do other work while coroutine is suspended.
+CppAwait provides an _await_ construct similar to the one from C# 5 (see [MSDN](http://msdn.microsoft.com/en-us/library/hh191443.aspx)). Upon reaching an _await_ expression the C# compiler automatically transforms the rest of the method into a task continuation. In C++ a similar effect can be achieved through coroutines (which CppAwait implements on top of Boost.Context). Calling `await()` will suspend a coroutine until the associated task completes. The program is free to do other work while coroutine is suspended.
 
 Your program needs a run loop to manage asynchronous operations.
 
@@ -22,6 +22,7 @@ Here is a snippet showing typical library use. It connects and transfers some da
 
     tcp::resolver::iterator outEndpoints;
     awt = ut::asio::asyncResolve(resolver, query, outEndpoints);
+    // Suspend coroutine until task has finished
     awt.await();
 
     for (auto it = outEndpoints; it != tcp::resolver::iterator(); ++it) {
@@ -32,39 +33,39 @@ Here is a snippet showing typical library use. It connects and transfers some da
             awt.await();
             break; // connected
         } catch (const std::exception&) {
-            // try next endpoint
+            // Try next endpoint
         }
     }
     if (!socket.is_open()) {
         throw SocketError("failed to connect socket");
     }
 
-    // write an HTTP request
+    // Write an HTTP request
     awt = ut::asio::asyncWrite(socket, request);
     awt.await();
 
-    // read response
+    // Read response
     awt = ut::asio::asyncReadUntil(socket, outResponse, std::string("\r\n"));
     awt.await();
 
-The _Awaitable_ class is a generic wrapper for asynchronous operations. All asynchronous methods return an _Awaitable_. Its _await()_ method yields control to the main loop until the _Awaitable_ completes or fails, at which point the coroutine resumes. If operation failed the associated exception gets thrown. Note there is no return value -- output parameters such as _endpoints_ must be passed by reference.
+The `Awaitable` class is a generic wrapper for asynchronous operations. All asynchronous methods return an `Awaitable`. Its `await()` method yields control to the main loop until the `Awaitable` completes or fails, at which point the coroutine resumes. If operation failed the associated exception gets thrown. Note there is no return value -- output parameters such as _endpoints_ must be passed by reference.
 
-_Awaitables_ compose easily, just like regular functions. More complex patterns are supported through _awaitAll()_ / _awaitAny()_.
+`Awaitables` compose easily, just like regular functions. More complex patterns are supported through `awaitAll()` / `awaitAny()`.
 
 
-Another snippet. Download and archive some files, allowing for archival while next download is in progress:
+Here is another snippet which downloads and archives some files. While a file is being archived, the next one is being downloaded:
 
     std::vector<std::string> urls = { ... };
 
     ut::Awaitable awtArchive;
 
     for (std::string url : urls) {
-        // holds fetched document
+        // Holds fetched document
         std::unique_ptr<std::vector<char> > document;
 
         ut::Awaitable awtFetch = asyncFetch(url, &document);
 
-        // doesn't block, instead it yields. the coroutine
+        // Doesn't block, instead it yields. The coroutine
         // gets resumed when fetch done or on exception.
         awtFetch.await();
 
@@ -89,7 +90,7 @@ Features
 
 - can adapt any asynchronous API
 
-- Boost.Asio wrappers
+- `Boost.Asio` wrappers
 
 - pluggable into any program with a run loop
 
@@ -103,21 +104,21 @@ Features
 Installation
 ============
 
-1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.57+ with _Boost.Context_, _Boost.Coroutine_ and _Boost.System_ compiled [[*]](#msvc10). Quick guide:
+1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.57+ with `Boost.Context`, `Boost.Coroutine`, `Boost.Thread` and `Boost.System` compiled [[*]](#deps). Quick guide:
 
    - download Boost archive
-   - ./bootstrap
-   - ./b2 --build-type=minimal --with-context --with-coroutine --with-chrono --with-thread --toolset=your-toolset stage
+   - `./bootstrap`
+   - `./b2 link=static --build-type=minimal --with-context --with-coroutine --with-chrono --with-thread --toolset=your-toolset stage`
 
 2. __Install [CMake](http://www.cmake.org/cmake/resources/software.html) 2.8+__
 
 3. __Build CppAwait__:
 
-   - mkdir build\_dir ; cd build\_dir
-   - cmake -G "your-generator" -DBOOST\_INCLUDEDIR="path-to-boost" -DBOOST\_LIBRARYDIR="path-to-boost-libs" "path-to-CppAwait"
+   - `mkdir build\_dir ; cd build\_dir`
+   - `cmake -G "your-generator" -DBOOST\_ROOT="path-to-boost" "path-to-CppAwait"`
    - open solution / make
 
-<a id="msvc10">(*)</a> Visual C++ 2010 doesn't implement the thread library. In this case _Boost.Chrono_ and _Boost.Thread_ are also required to compile the examples.
+<a id="deps">(*)</a> `Boost.Chrono` is additionally required to compile the examples on Visual C++ 2010. There is an optional Flickr example which depends on OpenSSL. Place OpenSSL under `C:\OpenSSL` for automatic detection on Windows.
 
 
 Portability
@@ -143,7 +144,7 @@ Valentin Milea <valentin.milea@gmail.com>
 License
 =======
 
-    Copyright 2012-2013 Valentin Milea
+    Copyright 2012-2015 Valentin Milea
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.

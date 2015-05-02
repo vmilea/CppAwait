@@ -26,37 +26,28 @@ namespace ut { namespace asio {
 using namespace boost::asio;
 using namespace boost::asio::ip;
 
-void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse, size_t& outContentLength)
+template <typename Socket>
+static void doAsyncHttpGet(Socket& socket,
+    const std::string& host, const std::string& path, bool persistentConnection,
+    bool readAll, std::shared_ptr<streambuf> outResponse, size_t& outContentLength)
 {
-    Awaitable awt;
-
-    tcp::resolver resolver(socket.get_io_service());
-    tcp::resolver::query query(host, "http");
-
-    // DNS resolve
-    tcp::resolver::iterator itEndpoints;
-    awt = asyncResolve(resolver, query, itEndpoints);
-    awt.await();
-
-    // connect
-    tcp::resolver::iterator itConnected;
-    awt = asyncConnect(socket, itEndpoints, itConnected);
-    awt.await();
-
-    if (!socket.is_open()) {
-        throw std::runtime_error("failed to connect socket");
+    if (!socket.lowest_layer().is_open()) {
+        throw std::runtime_error("socket not connected");
     }
 
     auto request = std::make_shared<streambuf>();
 
     // write HTTP request
     std::ostream requestStream(request.get());
-    requestStream << "GET " << path << " HTTP/1.0\r\n";
+    requestStream << "GET " << path << " HTTP/1.1\r\n";
     requestStream << "Host: " << host << "\r\n";
     requestStream << "Accept: */*\r\n";
-    requestStream << "Connection: close\r\n\r\n";
+    if (!persistentConnection) {
+        requestStream << "Connection: close\r\n";
+    }
+    requestStream << "\r\n";
 
-    awt = asyncWrite(socket, request);
+    Awaitable awt = asyncWrite(socket, request);
     awt.await();
 
     // read first response line
@@ -72,10 +63,10 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
     std::getline(responseStream, statusMessage);
 
     if (!responseStream || !boost::starts_with(httpVersion, "HTTP/")) {
-        throw std::runtime_error("invalid response");
+        throw std::runtime_error("invalid HTTP response");
     }
     if (statusCode != 200) {
-        throw std::runtime_error(string_printf("bad status code: %d", statusCode));
+        throw std::runtime_error(string_printf("bad HTTP status: %d", statusCode));
     }
 
     // read response headers
@@ -93,9 +84,37 @@ void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, const st
             outContentLength = boost::lexical_cast<size_t>(l);
         }
     }
+
+    if (readAll) {
+        size_t numBytesRemaining = outContentLength - outResponse->size();
+        size_t numBytesTransferred;
+        awt = asyncRead(socket, outResponse, asio::transfer_exactly(numBytesRemaining), numBytesTransferred);
+        awt.await();
+    }
 }
 
-Awaitable asyncHttpDownload(boost::asio::io_service& io, const std::string& host, const std::string& path, std::shared_ptr<streambuf> outResponse)
+namespace detail {
+
+    void doAsyncHttpGet(boost::asio::ip::tcp::socket& socket,
+        const std::string& host, const std::string& path, bool persistentConnection,
+        bool readAll, std::shared_ptr<boost::asio::streambuf> outResponse, size_t& outContentLength)
+    {
+        ut::asio::doAsyncHttpGet(socket, host, path, persistentConnection, readAll, outResponse, outContentLength);
+    }
+
+#ifdef HAVE_OPENSSL
+    void doAsyncHttpGet(boost::asio::ssl::stream<boost::asio::ip::tcp::socket>& socket,
+        const std::string& host, const std::string& path, bool persistentConnection,
+        bool readAll, std::shared_ptr<boost::asio::streambuf> outResponse, size_t& outContentLength)
+    {
+        ut::asio::doAsyncHttpGet(socket, host, path, persistentConnection, readAll, outResponse, outContentLength);
+    }
+#endif
+}
+
+Awaitable asyncHttpDownload(boost::asio::io_service& io,
+    const std::string& host, const std::string& path,
+    std::shared_ptr<streambuf> outResponse)
 {
     static int id = 0;
     auto tag = string_printf("asyncHttpDownload-%d", id++);
@@ -103,13 +122,48 @@ Awaitable asyncHttpDownload(boost::asio::io_service& io, const std::string& host
     return startAsync(std::move(tag), [&io, host, path, outResponse]() {
         tcp::socket socket(io);
 
-        size_t contentLength;
-        doAsyncHttpGetHeader(socket, host, path, outResponse, contentLength);
-
-        size_t numBytesTransferred;
-        Awaitable awt = asyncRead(socket, outResponse, asio::transfer_exactly(contentLength - outResponse->size()), numBytesTransferred);
+        tcp::resolver::query query(host, "http");
+        tcp::resolver::iterator itConnected;
+        Awaitable awt = asyncResolveAndConnect(socket, query, itConnected);
         awt.await();
+
+        size_t contentLength;
+        detail::doAsyncHttpGet(socket, host, path, false, true, outResponse, contentLength);
     });
 }
+
+#ifdef HAVE_OPENSSL
+
+Awaitable asyncHttpsDownload(boost::asio::io_service& io,
+    ssl::context_base::method sslVersion,
+    const std::string& host, const std::string& path,
+    std::shared_ptr<streambuf> outResponse)
+{
+    static int id = 0;
+    auto tag = string_printf("asyncHttpsDownload-%d", id++);
+
+    return startAsync(std::move(tag), [&io, sslVersion, host, path, outResponse]() {
+        // prepare SSL client socket
+        typedef ssl::stream<tcp::socket> ssl_socket;
+        ssl::context ctx(sslVersion);
+        ssl_socket socket(io, ctx);
+
+        tcp::resolver::query query(host, "https");
+        tcp::resolver::iterator itConnected;
+        Awaitable awt = asyncResolveAndConnect(socket.lowest_layer(), query, itConnected);
+        awt.await();
+
+        socket.lowest_layer().set_option(tcp::no_delay(true));
+
+        // perform SSL handshake
+        awt = asyncHandshake(socket, ssl_socket::client);
+        awt.await();
+
+        size_t contentLength;
+        detail::doAsyncHttpGet(socket, host, path, false, true, outResponse, contentLength);
+    });
+}
+
+#endif // HAVE_OPENSSL
 
 } }

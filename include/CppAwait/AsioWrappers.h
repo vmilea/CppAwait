@@ -21,6 +21,10 @@
 #include "misc/OpaqueSharedPtr.h"
 #include <boost/asio.hpp>
 
+#ifdef HAVE_OPENSSL
+#include <boost/asio/ssl.hpp>
+#endif
+
 // experimental Boost.Asio wrappers
 
 // note: Asio requires some arguments to be valid until callback. This complicates cancellation:
@@ -37,24 +41,35 @@
 
 namespace ut { namespace asio {
 
-inline std::exception_ptr eptr(const boost::system::error_code& ec)
-{
-    if (ec) {
-        return ut::make_exception_ptr(boost::system::system_error(ec));
-    } else {
-        return std::exception_ptr();
+namespace detail {
+
+    void doAsyncHttpGet(boost::asio::ip::tcp::socket& socket,
+        const std::string& host, const std::string& path, bool persistentConnection,
+        bool readAll, std::shared_ptr<boost::asio::streambuf> outResponse, size_t& outContentLength);
+
+#ifdef HAVE_OPENSSL
+    void doAsyncHttpGet(boost::asio::ssl::stream<boost::asio::ip::tcp::socket>& socket,
+        const std::string& host, const std::string& path, bool persistentConnection,
+        bool readAll, std::shared_ptr<boost::asio::streambuf> outResponse, size_t& outContentLength);
+#endif
+
+    inline std::exception_ptr eptr(const boost::system::error_code& ec)
+    {
+        if (ec) {
+            return ut::make_exception_ptr(boost::system::system_error(ec));
+        } else {
+            return std::exception_ptr();
+        }
     }
 }
-
 
 template <typename Timer>
 inline Awaitable asyncWait(Timer& timer)
 {
     ut::Awaitable awt("asyncWait");
 
-    timer.async_wait(
-                     awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
-        return eptr(ec);
+    timer.async_wait(awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -68,8 +83,8 @@ Awaitable asyncDelay(boost::asio::io_service& io, const DurationType& delay)
     auto timer = new boost::asio::deadline_timer(io, delay);
 
     timer->async_wait(
-                      awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
-        return eptr(ec);
+        awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+        return detail::eptr(ec);
     }));
 
     awt.then([timer]() {
@@ -89,7 +104,7 @@ inline Awaitable asyncResolve(Resolver& resolver, const typename Resolver::query
     resolver.async_resolve(query,
                            awt.wrap([&](const boost::system::error_code& ec, ResolverIterator it) -> std::exception_ptr {
         outEndpoints = it;
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -103,12 +118,11 @@ inline Awaitable asyncConnect(Socket& socket, const typename Socket::endpoint_ty
 
     socket.async_connect(endpoint,
                          awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
 }
-
 
 template <typename Socket, typename Iterator>
 inline Awaitable asyncConnect(Socket& socket, Iterator begin, Iterator& outConnected)
@@ -141,6 +155,22 @@ inline Awaitable asyncConnect(Socket& socket, Iterator begin, Iterator& outConne
     });
 }
 
+template <typename Socket>
+inline Awaitable asyncResolveAndConnect(Socket& socket, const typename Socket::protocol_type::resolver::query& query, typename Socket::protocol_type::resolver::iterator& outConnected)
+{
+    return ut::startAsync("asyncResolveAndConnect", [&socket, query, &outConnected]() {
+        Awaitable awt;
+
+        typename Socket::protocol_type::resolver resolver(socket.get_io_service());
+        typename Socket::protocol_type::resolver::iterator itEndpoints;
+        awt = asyncResolve(resolver, query, itEndpoints);
+        awt.await();
+
+        awt = asyncConnect(socket, itEndpoints, outConnected);
+        awt.await();
+    });
+}
+
 
 template <typename Acceptor, typename PeerSocket>
 inline Awaitable asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> peer)
@@ -149,7 +179,7 @@ inline Awaitable asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> pee
 
     acceptor.async_accept(*peer,
                           awt.wrap([peer](const boost::system::error_code& ec) -> std::exception_ptr {
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -162,7 +192,7 @@ inline Awaitable asyncAccept(Acceptor& acceptor, std::shared_ptr<PeerSocket> pee
 
     acceptor.async_accept(*peer, *peerEndpoint,
                           awt.wrap([peer, peerEndpoint](const boost::system::error_code& ec) {
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -177,7 +207,7 @@ inline Awaitable asyncWrite(AsyncWriteStream& stream, const ConstBufferSequence&
     boost::asio::async_write(stream, buffers, completionCondition,
                              awt.wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -204,7 +234,7 @@ inline Awaitable asyncWrite(AsyncWriteStream& stream, std::shared_ptr<boost::asi
     boost::asio::async_write(stream, *buffer, completionCondition,
                              awt.wrap([&, buffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -226,7 +256,7 @@ inline Awaitable asyncRead(AsyncReadStream& stream, const MutableBufferSequence&
     boost::asio::async_read(stream, outBuffers, completionCondition,
                             awt.wrap([&, masterBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -260,7 +290,7 @@ inline Awaitable asyncRead(AsyncReadStream& stream, std::shared_ptr<boost::asio:
     boost::asio::async_read(stream, *outBuffer, completionCondition,
                             awt.wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -288,7 +318,7 @@ inline Awaitable asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::
     boost::asio::async_read_until(stream, *outBuffer, condition,
                                   awt.wrap([&, outBuffer](const boost::system::error_code& ec, std::size_t bytesTransferred) -> std::exception_ptr {
         outBytesTransferred = bytesTransferred;
-        return eptr(ec);
+        return detail::eptr(ec);
     }));
 
     return std::move(awt);
@@ -302,6 +332,62 @@ inline Awaitable asyncReadUntil(AsyncReadStream& stream, std::shared_ptr<boost::
 }
 
 
-Awaitable asyncHttpDownload(boost::asio::io_service& io, const std::string& host, const std::string& path, std::shared_ptr<boost::asio::streambuf> outResponse);
+template <typename Socket>
+inline Awaitable asyncHttpGetHeader(Socket& socket,
+    const std::string& host, const std::string& path, bool persistentConnection,
+    std::shared_ptr<boost::asio::streambuf> outResponse, size_t& outContentLength)
+{
+    return ut::startAsync("asyncHttpGetHeader", [&socket, host, path, persistentConnection, outResponse, &outContentLength]() {
+        detail::doAsyncHttpGet(socket, host, path, persistentConnection, false, outResponse, outContentLength);
+    });
+}
+
+template <typename Socket>
+inline Awaitable asyncHttpGet(Socket& socket,
+    const std::string& host, const std::string& path, bool persistentConnection,
+    std::shared_ptr<boost::asio::streambuf> outResponse, size_t& outContentLength)
+{
+    return ut::startAsync("asyncHttpGet", [&socket, host, path, persistentConnection, outResponse, &outContentLength]() {
+        detail::doAsyncHttpGet(socket, host, path, persistentConnection, true, outResponse, outContentLength);
+    });
+}
+
+Awaitable asyncHttpDownload(boost::asio::io_service& io,
+    const std::string& host, const std::string& path,
+    std::shared_ptr<boost::asio::streambuf> outResponse);
+
+
+#ifdef HAVE_OPENSSL
+
+template <typename HandshakeType>
+inline Awaitable asyncHandshake(boost::asio::ssl::stream<boost::asio::ip::tcp::socket>& socket, const HandshakeType& handshakeType)
+{
+    ut::Awaitable awt("asyncHandshake");
+
+    socket.async_handshake(handshakeType,
+        awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+        return detail::eptr(ec);
+    }));
+
+    return std::move(awt);
+}
+
+inline Awaitable asyncShutdown(boost::asio::ssl::stream<boost::asio::ip::tcp::socket>& socket)
+{
+    ut::Awaitable awt("asyncShutdown");
+
+    socket.async_shutdown(awt.wrap([](const boost::system::error_code& ec) -> std::exception_ptr {
+        return detail::eptr(ec);
+    }));
+
+    return std::move(awt);
+}
+
+Awaitable asyncHttpsDownload(boost::asio::io_service& io,
+    boost::asio::ssl::context_base::method sslVersion,
+    const std::string& host, const std::string& path,
+    std::shared_ptr<boost::asio::streambuf> outResponse);
+
+#endif // HAVE_OPENSSL
 
 } }

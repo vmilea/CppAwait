@@ -14,6 +14,8 @@
 * limitations under the License.
 */
 
+#ifdef HAVE_OPENSSL
+
 #include "ExUtil.h"
 #include <CppAwait/Awaitable.h>
 #include <CppAwait/AsioWrappers.h>
@@ -29,15 +31,17 @@
 //
 
 using namespace boost::asio::ip;
-
+namespace ssl = boost::asio::ssl;
 
 // run loop
 static boost::asio::io_service sIo;
 
-
 //
 // flickr utils
 //
+
+static const std::string FLICKR_API_HOST = "api.flickr.com";
+static const std::string FLICKR_API_KEY = "e36784df8a03fea04c22ed93318b291c";
 
 struct FlickrPhoto
 {
@@ -103,10 +107,10 @@ static FlickrPhotos parseFlickrResponse(boost::asio::streambuf& response)
 
 static std::pair<std::string, std::string> makeFlickrQueryUrl(const std::vector<std::string>& tags, int perPage, int page)
 {
-    const std::string HOST = "api.flickr.com";
-    const std::string API_KEY = "e36784df8a03fea04c22ed93318b291c";
+    std::string path = "/services/rest/?method=flickr.photos.search&format=rest&api_key=" + FLICKR_API_KEY;
 
-    std::string path = "/services/rest/?method=flickr.photos.search&format=rest&api_key=" + API_KEY;
+    // std::string path = "api.flickr.com/services/rest/?method=flickr.photos.search&format=rest&api_key=e36784df8a03fea04c22ed93318b291c&tags=kitten
+    //  https://api.flickr.com/services/rest/?method=flickr.test.echo&name=value&api_key=e36784df8a03fea04c22ed93318b291c
 
     path += "&tags=" + tags[0];
     for (size_t i = 1; i < tags.size(); i++) {
@@ -116,7 +120,7 @@ static std::pair<std::string, std::string> makeFlickrQueryUrl(const std::vector<
     path += "&per_page=" + boost::lexical_cast<std::string>(perPage);
     path += "&page=" + boost::lexical_cast<std::string>(page);
 
-    return std::make_pair(HOST, path);
+    return std::make_pair(FLICKR_API_HOST, path);
 }
 
 static std::pair<std::string, std::string> makeFlickrPhotoUrl(const FlickrPhoto& photo)
@@ -167,11 +171,28 @@ static ut::Awaitable asyncFlickrDownload(const std::vector<std::string>& tags, i
                 totalPicsRemaining--;
             };
 
+            // prepare a persistent SSL connection for API queries
+            typedef ssl::stream<tcp::socket> SslSocket;
+            ssl::context ctx(ssl::context::sslv3_client);
+            SslSocket apiSocket(sIo, ctx);
+            // connect
+            tcp::resolver::query query(FLICKR_API_HOST, "https");
+            tcp::resolver::iterator itConnected;
+            ut::Awaitable awt = ut::asio::asyncResolveAndConnect(apiSocket.lowest_layer(), query, itConnected);
+            awt.await();
+            apiSocket.lowest_layer().set_option(tcp::no_delay(true));
+            apiSocket.lowest_layer().set_option(boost::asio::socket_base::keep_alive(true));
+            // perform SSL handshake
+            awt = ut::asio::asyncHandshake(apiSocket, SslSocket::client);
+            awt.await();
+
             while (totalPicsRemaining > 0) {
                 // download a page
                 auto queryUrl = makeFlickrQueryUrl(tags, numPicsPerPage, page);
                 auto response = std::make_shared<boost::asio::streambuf>();
-                ut::Awaitable awt = ut::asio::asyncHttpDownload(sIo, queryUrl.first, queryUrl.second, response);
+                // read HTTP header
+                size_t contentLength;
+                awt = ut::asio::asyncHttpGet(apiSocket, queryUrl.first, queryUrl.second, true, response, contentLength);
                 awt.await();
 
                 // parse xml
@@ -242,3 +263,5 @@ void ex_awaitFlickr()
     // loops until all async handlers have ben dispatched
     sIo.run();
 }
+
+#endif // HAVE_OPENSSL

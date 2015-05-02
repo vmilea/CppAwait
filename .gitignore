@@ -2,4 +2,6 @@
 *.suo
 *.kdev*
 .project
+.cproject
+.settings
 CMakeLists.txt.user

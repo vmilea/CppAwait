@@ -69,7 +69,7 @@ static void doAsyncHttpGetHeader(tcp::socket& socket, const std::string& host, c
 
     // write HTTP request
     std::ostream requestStream(request.get());
-    requestStream << "GET " << path << " HTTP/1.0\r\n";
+    requestStream << "GET " << path << " HTTP/1.1\r\n";
     requestStream << "Host: " << host << "\r\n";
     requestStream << "Accept: */*\r\n";
     requestStream << "Connection: close\r\n\r\n";

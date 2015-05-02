@@ -17,7 +17,13 @@ add_executable (examples ${_src_all_cxx} ${_src_h} ${_src_looper_h})
 
 target_link_libraries (examples cpp_await)
 
+message ("Boost linked libraries: ${Boost_LIBRARIES}")
 target_link_libraries (examples ${Boost_LIBRARIES})
+
+if (OPENSSL_FOUND)
+    message ("OpenSSL linked libraries: ${OPENSSL_LIBRARIES}")
+    target_link_libraries (examples ${OPENSSL_LIBRARIES})
+endif()
 
 if (WIN32)
     target_link_libraries (examples ws2_32 mswsock)

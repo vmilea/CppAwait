@@ -20,23 +20,39 @@ set (Boost_USE_STATIC_LIBS ON)
 
 if (MSVC10 OR MINGW)
     # MSVC10 & regular MINGW don't provide chrono & thread, fallback to Boost
-    set (_boost_deps context coroutine system chrono thread)
+    set (_boost_deps chrono coroutine context thread system)
 
     # mingw-gcc fails to link boost::thread
     if (WIN32 AND CMAKE_COMPILER_IS_GNUCXX)
         add_definitions (-DBOOST_THREAD_USE_LIB)
     endif()
 else()
-    set (_boost_deps context coroutine system)
+    set (_boost_deps coroutine context thread system)
 endif()
 
 message ("Boost dependencies: ${_boost_deps}")
 
-find_package (Boost 1.52.0 REQUIRED COMPONENTS ${_boost_deps})
+find_package (Boost 1.57.0 REQUIRED COMPONENTS ${_boost_deps})
+
+message ("Using Boost ${Boost_LIB_VERSION} from ${Boost_INCLUDE_DIRS}")
 include_directories (${Boost_INCLUDE_DIRS})
 
 # disable Boost autolinking
 add_definitions (-DBOOST_ALL_NO_LIB)
+
+#
+# OpenSSL
+#
+
+find_package (OpenSSL)
+
+if (OPENSSL_FOUND)
+    message ("Using OpenSSL ${OPENSSL_VERSION} from ${OPENSSL_INCLUDE_DIR}")
+    include_directories (${OPENSSL_INCLUDE_DIR})
+
+	# enable Flickr example
+	add_definitions (-DHAVE_OPENSSL)
+endif()
 
 #
 # defs
