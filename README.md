@@ -90,7 +90,7 @@ Features
 
 - can adapt any asynchronous API
 
-- `Boost.Asio` wrappers
+- _Boost.Asio_ wrappers
 
 - pluggable into any program with a run loop
 
@@ -104,7 +104,7 @@ Features
 Installation
 ============
 
-1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.57+ with `Boost.Context`, `Boost.Coroutine`, `Boost.Thread` and `Boost.System` compiled [[*]](#deps). Quick guide:
+1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.57+ with _Boost.Context_, _Boost.Coroutine_, _Boost.Thread_ and _Boost.System_ compiled [[*]](#deps). Quick guide:
 
    - download Boost archive
    - `./bootstrap`
@@ -118,7 +118,7 @@ Installation
    - `cmake -G "your-generator" -DBOOST\_ROOT="path-to-boost" "path-to-CppAwait"`
    - open solution / make
 
-<a id="deps">(*)</a> `Boost.Chrono` is additionally required to compile the examples on Visual C++ 2010. There is an optional Flickr example which depends on OpenSSL. Place OpenSSL under `C:\OpenSSL` for automatic detection on Windows.
+<a id="deps">(*)</a> _Boost.Chrono_ is additionally required to compile the examples on Visual C++ 2010. There is an optional Flickr example which depends on OpenSSL. Place OpenSSL under `C:\OpenSSL` for automatic detection on Windows.
 
 
 Portability
@@ -129,7 +129,7 @@ The library is supported on Windows / Linux with any of these compilers:
    - Visual C++ 2010 or later
    - GCC 4.6.2 or later
 
-Boost.Context includes assembly code for ARM / MIPS / PowerPC32 / PowerPC64 / X86-32 / X86-64.
+_Boost.Context_ includes assembly code for ARM / MIPS / PowerPC32 / PowerPC64 / X86-32 / X86-64.
 
 Porting to additional platforms (e.g. iOS, Android) should be trivial.
 
