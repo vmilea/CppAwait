@@ -23,24 +23,18 @@
 // ABOUT: generator - iterates over a filtered collection
 //
 
-template <typename C, typename P>
-static void filteredIterator(const C& collection, P predicate)
-{
-    foreach_(auto& value, collection) {
-        if (predicate(value)) {
-            ut::yield((void*) &value);
-        }
-    }
-
-    // simply return to finish iteration
-}
-
 void ex_iterator()
 {
     std::array<int, 10> digits = { { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 } };
 
     auto coOddDigits = [&](void*) {
-        filteredIterator(digits, [](int value) { return value % 2 == 1; });
+        foreach_(auto& value, digits) {
+            if (value % 2 == 1) {
+                ut::yield((void*)&value);
+            }
+        }
+
+        // simply return to finish iteration
     };
 
     ut::YieldSequence<int> oddDigits(coOddDigits);

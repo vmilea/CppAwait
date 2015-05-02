@@ -20,7 +20,7 @@
 #include <array>
 
 //
-// ABOUT: generator - fibonacci sequence
+// ABOUT: generator - lazy evaluation of an infinite sequence
 //
 
 static void coFiboGenerator(void *startValue)
@@ -42,28 +42,28 @@ static void coFiboGenerator(void *startValue)
 
 void ex_fibonacci()
 {
+    // Explicit coroutine management
     {
-        auto fiboCoro = new ut::Coro("fibo-generator", &coFiboGenerator);
+        // Allocate a coroutine. Each coroutine has its own stack.
+        ut::Coro fiboCoro("fibo-generator", &coFiboGenerator);
 
         for (int i = 0; i < 10; i++) {
-            // yield nullptr to coroutine
-            auto value = (long *) ut::yieldTo(fiboCoro);
+            // Yield nullptr to coroutine
+            auto value = (long *) ut::yieldTo(&fiboCoro);
 
-            // back from coroutine. value points to an integer on fibo stack
+            // Back from coroutine. Value points to an integer on fibo stack.
             printf ("%ld\n", *value);
         }
-        printf ("\n\n");
 
         // Terminate coroutine via exception. You could also yield a flag
         // that coroutine checks to see if it should quit.
-        ut::forceUnwind(fiboCoro);
-
-        delete fiboCoro;
+        ut::forceUnwind(&fiboCoro);
     }
 
-    {
-        // YieldSequence makes it easier to iterate over generators
+    printf("\n\n");
 
+    // Same output by letting YieldSequence handle the coroutine
+    {
         ut::YieldSequence<long> fibos(&coFiboGenerator);
 
         int i = 0;
