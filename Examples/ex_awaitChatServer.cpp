@@ -283,13 +283,13 @@ static ut::Awaitable asyncChatServer(unsigned short port)
                 session = nullptr;
             } else {
                 // remove terminated session
-                ClientSession *session = posTerminated->get();
+                ClientSession *pSession = posTerminated->get();
 
                 try {
-                    session->awaitable().await(); // check for exception
-                    printf ("client '%s' has left\n", session->nickname().c_str());
+                    pSession->awaitable().await(); // check for exception
+                    printf ("client '%s' has left\n", pSession->nickname().c_str());
                 } catch(...) {
-                    printf ("client '%s' disconnected\n", session->nickname().c_str());
+                    printf ("client '%s' disconnected\n", pSession->nickname().c_str());
                 }
 
                 mSessions.erase(posTerminated);

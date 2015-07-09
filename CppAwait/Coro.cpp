@@ -25,8 +25,6 @@
 #include <algorithm>
 #include <boost/version.hpp>
 #include <boost/context/all.hpp>
-#include <boost/coroutine/stack_allocator.hpp>
-#include <boost/coroutine/stack_context.hpp>
 
 namespace ut {
 
@@ -145,11 +143,11 @@ class StackPool
 public:
     StackPool() { }
 
-    boost::coroutines::stack_context obtain(size_t minStackSize)
+    ctx::stack_context obtain(size_t minStackSize)
     {
         // take smallest stack that fits requirement. create one if no match.
 
-        boost::coroutines::stack_context stack;
+        ctx::stack_context stack;
 
         StackMap::iterator pos = mStacks.lower_bound(minStackSize);
 
@@ -159,7 +157,7 @@ public:
                 stackSize = minStackSize;
             }
 
-            mAllocator.allocate(stack, stackSize);
+            stack = Allocator(stackSize).allocate();
         } else {
             stack = pos->second;
             mStacks.erase(pos);
@@ -170,7 +168,7 @@ public:
         return stack;
     }
 
-    void recycle(boost::coroutines::stack_context stack)
+    void recycle(ctx::stack_context stack)
     {
         ut_log_verbose_("recycled stack %p of size %ld", stack.sp, (long) stack.size);
 
@@ -180,31 +178,30 @@ public:
     void drain()
     {
         ut_foreach_(auto& pair, mStacks) {
-            mAllocator.deallocate(pair.second);
+            Allocator(0).deallocate(pair.second);
         }
         mStacks.clear();
     }
 
     static size_t maximumStackSize()
     {
-        return boost::coroutines::stack_traits::maximum_size();
+        return ctx::stack_traits::maximum_size();
     }
 
     static size_t defaultStackSize()
     {
-        return boost::coroutines::stack_traits::default_size();
+        return ctx::stack_traits::default_size();
     }
 
     static size_t minimumStackSize()
     {
-        return boost::coroutines::stack_traits::minimum_size();
+        return ctx::stack_traits::minimum_size();
     }
 
 private:
-    typedef std::multimap<size_t, boost::coroutines::stack_context> StackMap;
-    typedef boost::coroutines::stack_allocator Allocator;
+    typedef std::multimap<size_t, ctx::stack_context> StackMap;
+    typedef ctx::fixedsize_stack Allocator;
 
-    Allocator mAllocator;
     StackMap mStacks;
 };
 
@@ -249,13 +246,13 @@ void Coro::drainStackPool()
 struct Coro::Impl
 {
     std::string tag;
-    boost::coroutines::stack_context stack;
+    ctx::stack_context stack;
     ctx::fcontext_t fc;
     Coro *parent;
     Coro::Func func;
     bool isRunning;
 
-    Impl(std::string&& tag, boost::coroutines::stack_context stack)
+    Impl(std::string&& tag, ctx::stack_context stack)
         : tag(std::move(tag))
         , stack(stack)
         , fc(nullptr)
@@ -282,7 +279,7 @@ Coro::Coro(std::string tag, size_t stackSize)
 }
 
 Coro::Coro()
-    : m(new Impl(std::string("main"), boost::coroutines::stack_context()))
+    : m(new Impl(std::string("main"), ctx::stack_context()))
 {
     ut_log_verbose_("- new coroutine '%s'", m->tag.c_str());
 
@@ -396,7 +393,7 @@ void* Coro::implYieldTo(Coro *resumeCoro, YieldType type, void *value)
     sCurrentCoro = resumeCoro;
 
     YieldValue ySent(type, value);
-    auto yReceived = (YieldValue *) ctx::jump_fcontext(&m->fc, resumeCoro->m->fc, (intptr_t) &ySent);
+    auto yReceived = (YieldValue *) ctx::jump_fcontext(&m->fc, resumeCoro->m->fc, (intptr_t) &ySent, true);
 
     // ut_log_debug_("-- back to '%s', type = %s", resumeCoro->tag(), (yReceived->type == YT_RESULT ? "YT_RESULT" : "YT_EXCEPTION"));
 

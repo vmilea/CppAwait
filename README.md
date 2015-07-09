@@ -104,11 +104,11 @@ Features
 Installation
 ============
 
-1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.57+ with _Boost.Context_, _Boost.Coroutine_, _Boost.Thread_ and _Boost.System_ compiled [[*]](#deps). Quick guide:
+1. __Install [Boost](http://www.boost.org/users/download/).__ To use CppAwait you need Boost 1.58+ with _Boost.Context_, _Boost.Thread_ and _Boost.System_ compiled [[*]](#deps). Quick guide:
 
    - download Boost archive
    - `./bootstrap`
-   - `./b2 link=static --build-type=minimal --with-context --with-coroutine --with-chrono --with-thread --toolset=your-toolset stage`
+   - `./b2 link=static --build-type=minimal --with-context --with-chrono --with-thread --toolset=your-toolset stage`
 
 2. __Install [CMake](http://www.cmake.org/cmake/resources/software.html) 2.8+__
 

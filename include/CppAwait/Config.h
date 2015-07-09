@@ -27,6 +27,11 @@
 #define _WIN32_WINNT WINVER
 #endif
 
+#ifdef _MSC_VER
+// workaround for Boost.Asio: WinSock.h has already been included
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 ///
 
 #define ut_concatenate_(s1, s2)          s1##s2
