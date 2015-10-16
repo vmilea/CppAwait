@@ -1,3 +1,7 @@
+## NOTICE
+
+### **This library is no longer being maintained. All development has shifted to [CppAsync](https://github.com/vmilea/CppAsync), a complete reimplementation that is more efficient, flexible, and doesn't depend on Boost.Context.**
+
 CppAwait
 ========
 
